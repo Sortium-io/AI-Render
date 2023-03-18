@@ -159,8 +159,9 @@ def ensure_air_workspace():
 def activate_air_workspace(scene):
     """Activate the special compositor workspace, and make sure it's viewing the render result"""
     try:
-        utils.activate_workspace(workspace_id=config.workspace_id)
-        utils.view_render_result_in_air_image_editor()
+        # utils.activate_workspace(workspace_id=config.workspace_id)
+        # utils.view_render_result_in_air_image_editor()
+        pass
     except:
         scene.air_props.is_enabled = False
         handle_error("Couldn't find the AI Render workspace. Please re-enable AI Render, or deactivate the AI Render add-on.", "no_workspace")
@@ -557,6 +558,11 @@ def send_to_api(scene, prompts=None):
         }
         event_params = analytics.prepare_event('generate_image', generation_params=params, additional_params=additional_params)
         analytics.track_event('generate_image', event_params=event_params)
+
+        print("Looking for AI Render output_file", output_file)
+        ai_image_output = bpy.data.images.load(output_file, check_existing=False)
+        ai_image_output.name = "AI Render Output"
+        print("AI Render output_file", ai_image_output)
 
         # return success status
         return True
