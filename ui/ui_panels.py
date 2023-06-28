@@ -68,12 +68,23 @@ class AIR_PT_setup(bpy.types.Panel):
         return utils.get_dream_studio_api_key(context) != '' and context.scene.air_props.error_key != 'api_key'
 
     @classmethod
+    def has_dimensions_issue(cls, context):
+        return \
+            not AIR_PT_setup.are_dimensions_valid(context) or \
+            not AIR_PT_setup.are_dimensions_small_enough(context) or \
+            not AIR_PT_setup.are_dimensions_large_enough(context)
+
+    @classmethod
     def are_dimensions_valid(cls, context):
         return utils.are_dimensions_valid(context.scene) and context.scene.air_props.error_key != 'invalid_dimensions'
 
     @classmethod
     def are_dimensions_small_enough(cls, context):
         return not utils.are_dimensions_too_large(context.scene) and context.scene.air_props.error_key != 'dimensions_too_large'
+
+    @classmethod
+    def are_dimensions_large_enough(cls, context):
+        return not utils.are_dimensions_too_small(context.scene) and context.scene.air_props.error_key != 'dimensions_too_small'
 
     @classmethod
     def poll(cls, context):
@@ -105,11 +116,15 @@ class AIR_PT_setup(bpy.types.Panel):
             row.prop(utils.get_addon_preferences(context), "dream_studio_api_key")
 
         # show the image dimension help if the dimensions are invalid or too large
-        elif not AIR_PT_setup.are_dimensions_valid(context) or not AIR_PT_setup.are_dimensions_small_enough(context):
+        elif AIR_PT_setup.has_dimensions_issue(context):
             if not AIR_PT_setup.are_dimensions_valid(context):
                 utils.label_multiline(layout, text="Adjust Image Size: \nStable Diffusion only works on certain image dimensions.", icon="INFO", width=width_guess)
+            elif not AIR_PT_setup.are_dimensions_small_enough(context):
+                utils.label_multiline(layout, text=f"Adjust Image Size: \nImage dimensions are too large. Please decrease width and/or height. Total pixel area must be at most {round(utils.get_active_backend().max_image_size() / (1024*1024), 1)} megapixels.", icon="INFO", width=width_guess)
             else:
-                utils.label_multiline(layout, text=f"Adjust Image Size: \nImage dimensions are too large. Please decrease width and/or height. Total pixel area must be a max of {round(utils.get_active_backend().max_image_size() / (1024*1024), 1)} megapixels.", icon="INFO", width=width_guess)
+                utils.label_multiline(layout, text=f"Adjust Image Size: \nImage dimensions are too small. Please increase width and/or height. Total pixel area must be at least {round(utils.get_active_backend().min_image_size() / (1024*1024), 1)} megapixels.", icon="INFO", width=width_guess)
+
+            layout.separator()
 
             row = layout.row()
             row.label(text="Set Image Size:")
@@ -122,11 +137,21 @@ class AIR_PT_setup(bpy.types.Panel):
             col = row.column()
             col.operator(operators.AIR_OT_show_other_dimension_options.bl_idname, text="Other")
 
-        # else, show the ready / getting started message
+            if utils.get_active_backend().supports_upscaling() and props.do_upscale_automatically:
+                layout.separator()
+                box = layout.box()
+                utils.label_multiline(box, text=f"Final image will be upscaled {round(props.upscale_factor)}x larger than these initial dimensions.", width=width_guess-20)
+
+        # else, show the ready / getting started message and disable and change image size buttons
         else:
             utils.label_multiline(layout, text="You're ready to start rendering!", width=width_guess, alignment="CENTER")
             row = layout.row()
             row.operator("wm.url_open", text="Help Getting Started", icon="URL").url = config.VIDEO_TUTORIAL_URL
+
+            row = layout.row(align=True)
+            row.operator(operators.AIR_OT_show_other_dimension_options.bl_idname, text="Change Image Size")
+            row.separator()
+            row.operator(operators.AIR_OT_disable.bl_idname, text="Disable AI Render")
 
 
 class AIR_PT_prompt(bpy.types.Panel):
@@ -262,6 +287,78 @@ class AIR_PT_advanced_options(bpy.types.Panel):
         sub.prop(props, 'sampler', text="")
 
 
+class AIR_PT_controlnet(bpy.types.Panel):
+    bl_label = "ControlNet"
+    bl_idname = "AIR_PT_controlnet"
+    bl_parent_id = "AIR_PT_main"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "render"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        return utils.is_installation_valid() and context.scene.air_props.is_enabled and utils.sd_backend(context) == "automatic1111"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        props = scene.air_props
+
+        width_guess = 220
+
+        # ControlNet Help
+        if not props.controlnet_close_help:
+            box = layout.box()
+            row = box.row()
+            row.label(text="ControlNet Help:", icon="INFO")
+            split = row.split(align=True)
+            split.prop(props, "controlnet_close_help", text="", icon="X", emboss=False)
+
+            utils.label_multiline(box, text="ControlNet is an extension for Automatic1111 that provides a spectacular ability to match scene details - layout, objects, poses - while recreating the scene in Stable Diffusion. It can also create much more stable animations than standard Stable Diffusion.", width=width_guess)
+
+            row = box.row()
+            row.operator("wm.url_open", text="Learn More", icon="URL").url = config.HELP_WITH_CONTROLNET_URL
+
+            layout.separator()
+
+        # Enable
+        row = layout.row()
+        row.prop(props, 'controlnet_is_enabled', text="Enable")
+
+        # ControlNet Load Models and Modules
+        if not props.controlnet_available_models:
+            row = layout.row()
+            row.operator(operators.AIR_OT_automatic1111_load_controlnet_models_and_modules.bl_idname, text="Load Models from Automatic1111", icon="FILE_REFRESH")
+        else:
+            # Heads up box
+            if props.controlnet_is_enabled:
+                box = layout.box()
+                row = box.row()
+                row.label(text="ControlNet will be used for each render")
+
+            # ControlNet Module (Preprocessor)
+            row = layout.row()
+            row.prop(props, 'controlnet_module', text="Preprocessor")
+
+            split = row.split(align=True)
+            split.operator(operators.AIR_OT_automatic1111_load_controlnet_modules.bl_idname, text="", icon="FILE_REFRESH")
+
+            # ControlNet Model
+            row = layout.row()
+            row.prop(props, 'controlnet_model', text="Model")
+
+            split = row.split(align=True)
+            split.operator(operators.AIR_OT_automatic1111_load_controlnet_models.bl_idname, text="", icon="FILE_REFRESH")
+
+            # ControlNet Weight
+            row = layout.row()
+            sub = row.column()
+            sub.label(text="Weight")
+            sub = row.column()
+            sub.prop(props, 'controlnet_weight', text="", slider=False)
+
+
 class AIR_PT_operation(bpy.types.Panel):
     bl_label = "Operation"
     bl_idname = "AIR_PT_operation"
@@ -287,20 +384,18 @@ class AIR_PT_operation(bpy.types.Panel):
         row.prop(props, 'auto_run')
 
         # Generate Image
-        manual_buttons_enabled = 'Render Result' in bpy.data.images and bpy.data.images['Render Result'].has_data
-
         layout.separator()
 
         row = layout.row()
         row.label(text="Run Manually:")
 
         row = layout.row()
-        row.enabled = manual_buttons_enabled
+        row.enabled = 'Render Result' in bpy.data.images and bpy.data.images['Render Result'].has_data
         row.operator(operators.AIR_OT_generate_new_image_from_render.bl_idname)
 
         row = layout.row()
-        row.enabled = manual_buttons_enabled
-        row.operator(operators.AIR_OT_generate_new_image_from_current.bl_idname)
+        row.enabled = props.last_generated_image_filename != ""
+        row.operator(operators.AIR_OT_generate_new_image_from_last_sd_image.bl_idname)
 
         layout.separator()
 
@@ -318,6 +413,89 @@ class AIR_PT_operation(bpy.types.Panel):
 
         if (props.do_autosave_before_images or props.do_autosave_after_images) and not props.autosave_image_path:
             utils.label_multiline(layout, text="Please specify a path", icon="ERROR", width=width_guess)
+
+
+class AIR_PT_upscale(bpy.types.Panel):
+    bl_label = "Upscale"
+    bl_idname = "AIR_PT_upscale"
+    bl_parent_id = "AIR_PT_main"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "render"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        return utils.is_installation_valid() and context.scene.air_props.is_enabled
+
+    @classmethod
+    def does_backend_support_upscaling(cls, context):
+        return utils.get_active_backend().supports_upscaling()
+
+    @classmethod
+    def is_upscaler_model_list_loaded(cls, context):
+        return utils.get_active_backend().is_upscaler_model_list_loaded(context)
+
+    @classmethod
+    def does_backend_support_reloading_upscaler_model_list(cls, context):
+        return utils.get_active_backend().supports_reloading_upscaler_models()
+
+    @classmethod
+    def are_upscaled_dimensions_small_enough(cls, context):
+        return not utils.are_upscaled_dimensions_too_large(context.scene)
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        props = scene.air_props
+
+        width_guess = 220
+
+        # if backend does not support upscaling, show message
+        if not AIR_PT_upscale.does_backend_support_upscaling(context):
+            box = layout.box()
+            utils.label_multiline(box, text=f"Upscaling is not supported by {utils.sd_backend_formatted_name()}. If you'd like to upscale your image, switch to DreamStudio or Automatic1111 in AI Render's preferences.", icon="ERROR", width=width_guess)
+            return
+
+        # if the upscaler model list hasn't been loaded, show message and button
+        if not AIR_PT_upscale.is_upscaler_model_list_loaded(context):
+            utils.label_multiline(layout, text="To get started upscaling, load the available upscaler models", icon="ERROR", width=width_guess)
+            layout.operator(operators.AIR_OT_automatic1111_load_upscaler_models.bl_idname, text="Load Upscaler Models", icon="FILE_REFRESH")
+            return
+
+        # upscale settings
+        row = layout.row()
+        row.prop(props, "do_upscale_automatically")
+
+        row = layout.row()
+        sub = row.column()
+        sub.label(text="Upscale Factor")
+        sub = row.column()
+        sub.prop(props, "upscale_factor", text="", slider=False)
+
+        row = layout.row()
+        sub = row.column()
+        sub.label(text="Upscaler Model")
+        sub = row.column()
+        sub.prop(props, "upscaler_model", text="")
+
+        box = layout.box()
+        row = box.row()
+        row.label(text=f"Resulting image size: {utils.get_upscaled_width(scene)} x {utils.get_upscaled_height(scene)}")
+
+        # if the dimensions are too large, show message
+        if not AIR_PT_upscale.are_upscaled_dimensions_small_enough(context):
+            utils.label_multiline(layout, text="Upscaled dimensions are too large. Please decrease the scale factor.", icon="ERROR", width=width_guess)
+
+        # if the backend supports reloading the upscaler model list, show button
+        if AIR_PT_upscale.does_backend_support_reloading_upscaler_model_list(context):
+            row = layout.row()
+            row.operator(operators.AIR_OT_automatic1111_load_upscaler_models.bl_idname, text="Reload Upscaler Models", icon="FILE_REFRESH")
+
+        # show button to manually upscale
+        row = layout.row()
+        row.enabled = props.last_generated_image_filename != ""
+        row.operator(operators.AIR_OT_upscale_last_sd_image.bl_idname, icon="FULLSCREEN_ENTER")
 
 
 class AIR_PT_animation(bpy.types.Panel):
@@ -377,7 +555,7 @@ class AIR_PT_animation(bpy.types.Panel):
             split = row.split(align=True)
             split.prop(props, "close_animation_tips", text="", icon="X", emboss=False)
 
-            utils.label_multiline(box, text="For more stable animations, consider increasing \"Image Similarity\" to at least 0.7", width=width_guess)
+            utils.label_multiline(box, text="For more stable animations, consider using ControlNet (locally) or increasing \"Image Similarity\" to at least 0.7", width=width_guess)
 
             row = box.row()
             row.operator("wm.url_open", text="Get Animation Tips", icon="URL").url = config.ANIMATION_TIPS_URL
@@ -388,7 +566,9 @@ classes = [
     AIR_PT_setup,
     AIR_PT_prompt,
     AIR_PT_advanced_options,
+    AIR_PT_controlnet,
     AIR_PT_operation,
+    AIR_PT_upscale,
     AIR_PT_animation,
 ]
 

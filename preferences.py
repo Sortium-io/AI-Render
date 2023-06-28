@@ -32,7 +32,7 @@ class AIRPreferences(bpy.types.AddonPreferences):
         name="Enable Rendering with Local Stable Diffusion",
         description="NOTE: This is now legacy, but is used to set sd_backend for anyone who was previously using Automatic1111",
         default=False,
-        update=properties.ensure_sampler,
+        update=properties.ensure_properties,
     )
 
     sd_backend: bpy.props.EnumProperty(
@@ -42,8 +42,9 @@ class AIRPreferences(bpy.types.AddonPreferences):
             ('dreamstudio', 'DreamStudio (cloud)', ''),
             ('stablehorde', 'Stable Horde (cloud)', ''),
             ('automatic1111', 'Automatic1111 (local)', ''),
+            ('shark', 'SHARK by nod.ai (local)', ''),
         ],
-        update=properties.ensure_sampler,
+        update=properties.ensure_properties,
         description="Choose a Stable Diffusion backend to use. DreamStudio is the default, and is the quickest to run. Stable Horde is a community-run backend that is completely free. Automatic1111 is a local installation of Stable Diffusion.",
     )
 
@@ -59,6 +60,12 @@ class AIRPreferences(bpy.types.AddonPreferences):
         default=360,
         min=10,
         max=3600,
+    )
+
+    is_opted_out_of_analytics: bpy.props.BoolProperty(
+        name="Opt out of analytics",
+        description="If this is checked, the add-on will not send or store any analytics data",
+        default=False,
     )
 
     # Add-on Updater Preferences
@@ -98,7 +105,6 @@ class AIRPreferences(bpy.types.AddonPreferences):
         default=0,
         min=0,
         max=59)
-
 
     def draw(self, context):
         layout = self.layout
@@ -171,19 +177,54 @@ class AIRPreferences(bpy.types.AddonPreferences):
                 col.prop(self, "local_sd_timeout", text="")
 
                 box.separator()
-                utils.label_multiline(box, text="AI Render will use your local Stable Diffusion installation. Please make sure the Web UI is launched and running in a terminal.", icon="KEYTYPE_BREAKDOWN_VEC", width=width_guess)
+                utils.label_multiline(box, text=f"AI Render will use your local Stable Diffusion installation. Please make sure the Web UI is launched and running in a terminal.", icon="KEYTYPE_BREAKDOWN_VEC", width=width_guess)
 
                 box.separator()
-                utils.label_multiline(box, text=f"Currently, only Automatic1111's Web UI is supported. Collaboration to support more installations is welcome! [Help with local installation]({config.HELP_WITH_LOCAL_INSTALLATION_URL}) [Help add support for other local installations]({config.CONTRIBUTING_URL}) ", width=width_guess)
+                row = box.row()
+                row.operator("wm.url_open", text="Help with local installation", icon="URL").url \
+                    = config.HELP_WITH_LOCAL_INSTALLATION_URL
+            
+            # Local Installation with SHARK
+            if self.sd_backend == "shark":
+                box = layout.box()
+                row = box.row()
+                row.label(text="Local Installation with SHARK", icon="INFO")
 
+                utils.label_multiline(box, text="Instead of running in the cloud with DreamStudio, AI Render can hook into an existing local installation of Stable Diffusion. This allows for unlimited, free rendering on your own machine. It requires some advanced setup steps.", width=width_guess)
+
+                box.separator()
+
+                row = box.row()
+                col = row.column()
+                col.label(text="Local Web Server URL:")
+                col = row.column()
+                col.prop(self, "local_sd_url", text="")
+
+                row = box.row()
+                col = row.column()
+                col.label(text="Timeout (in seconds):")
+                col = row.column()
+                col.prop(self, "local_sd_timeout", text="")
+
+                box.separator()
+                utils.label_multiline(box, text=f"AI Render will use your local Stable Diffusion installation. Please make sure the Web UI is launched and running in a terminal.", icon="KEYTYPE_BREAKDOWN_VEC", width=width_guess)
+
+                box.separator()
+                row = box.row()
+                row.operator("wm.url_open", text="Help with local installation", icon="URL").url \
+                    = config.HELP_WITH_SHARK_INSTALLATION_URL
+            
             # Notes
             box = layout.box()
             box.label(text="Note:")
 
             utils.label_multiline(box, text="AI image generation is an incredible technology, and it's only in its infancy. Please use it responsibly and ethically.", width=width_guess)
 
-            box.separator()
+            box = layout.box()
+            box.label(text="Analytics:")
             utils.label_multiline(box, text="AI Render sends anonymous meta information to Google Analytics, to help improve the add-on. No prompt text or images are sent or stored in any way.", width=width_guess)
+            row = box.row()
+            row.prop(self, "is_opted_out_of_analytics")
 
             # Add-on Updater
             box = layout.box()

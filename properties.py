@@ -6,6 +6,7 @@ from . import (
     utils,
 )
 from .ui import ui_preset_styles
+from .sd_backends import automatic1111_api
 
 
 def get_available_samplers(self, context):
@@ -16,11 +17,46 @@ def get_default_sampler():
     return utils.get_active_backend().default_sampler()
 
 
-def ensure_sampler(self, context):
+def get_available_upscaler_models(self, context):
+    return utils.get_active_backend().get_upscaler_models(context)
+
+
+def get_default_upscaler_model():
+    return utils.get_active_backend().default_upscaler_model()
+
+
+def get_available_controlnet_models(self, context):
+    if utils.sd_backend() == "automatic1111":
+        return automatic1111_api.get_available_controlnet_models(context)
+    else:
+        return []
+
+
+def get_available_controlnet_modules(self, context):
+    if utils.sd_backend() == "automatic1111":
+        return automatic1111_api.get_available_controlnet_modules(context)
+    else:
+        return []
+
+
+def ensure_sampler(context):
     # """Ensure that the sampler is set to a valid value"""
     scene = context.scene
     if not scene.air_props.sampler:
         scene.air_props.sampler = get_default_sampler()
+
+
+def ensure_upscaler_model(context):
+    # """Ensure that the upscale model is set to a valid value"""
+    scene = context.scene
+    if utils.get_active_backend().is_upscaler_model_list_loaded(context) and not scene.air_props.upscaler_model:
+        scene.air_props.upscaler_model = get_default_upscaler_model()
+
+
+def ensure_properties(self, context):
+    # """Ensure that any properties which could change with a change in preferences are set to valid values"""
+    ensure_sampler(context)
+    ensure_upscaler_model(context)
 
 
 class AIRProperties(bpy.types.PropertyGroup):
@@ -85,8 +121,9 @@ class AIRProperties(bpy.types.PropertyGroup):
             ('v1-5', 'SD 1.5', '', 20),
             ('v2-0', 'SD 2.0', '', 30),
             ('v2-1', 'SD 2.1', '', 40),
+            ('stable-diffusion-xl-beta-v2-2-2', 'SDXL Beta', '', 100),
         ],
-        description="The Stable Diffusion model to use. 2.0 is more accurate with some types of images, and prompts differently from earlier versions. 1.5 is better for using artist names and art styles in prompts",
+        description="The Stable Diffusion model to use. SDXL is optimized for photorealism and detailed portraits (comparable to Midjourney). 2.x is more accurate than 1.5 with some types of images, and prompts differently from earlier versions. 1.5 is best for using artist names and art styles in prompts",
     )
     sampler: bpy.props.EnumProperty(
         name="Sampler",
@@ -134,6 +171,37 @@ class AIRProperties(bpy.types.PropertyGroup):
         description="The path to save before/after images, if autosave is enabled (above)",
         subtype="DIR_PATH",
     )
+    last_generated_image_filename: bpy.props.StringProperty(
+        name="Last Stable Diffusion Image",
+        default="",
+        description="The full path and filename of the last image generated from Stable Diffusion (before any upscaling)",
+    )
+    upscale_factor: bpy.props.FloatProperty(
+        name="Upscale Factor",
+        default=4.0,
+        soft_min=2.0,
+        soft_max=4.0,
+        min=1.0,
+        max=8.0,
+        precision=1,
+        step=10,
+        description="The factor to upscale the image by. The resulting image will be its original size times this factor"
+    )
+    do_upscale_automatically: bpy.props.BoolProperty(
+        name="Upscale Automatically",
+        default=True,
+        description="When true, will automatically upscale the image after each render",
+    )
+    upscaler_model: bpy.props.EnumProperty(
+        name="Upscaler Model",
+        items=get_available_upscaler_models,
+        description="Which upscaler model to use",
+    )
+    automatic1111_available_upscaler_models: bpy.props.StringProperty(
+        name="Automatic1111 Upscaler Models",
+        default="Lanczos||||Nearest||||ESRGAN_4x||||LDSR||||ScuNET GAN||||ScuNET PSNR||||SwinIR 4x",
+        description="A list of the available upscaler models (loaded from the Automatic1111 API)",
+    )
     animation_output_path: bpy.props.StringProperty(
         name="Animation Output Path",
         default="",
@@ -168,6 +236,44 @@ class AIRProperties(bpy.types.PropertyGroup):
     close_animation_tips: bpy.props.BoolProperty(
         name="Close Animation Tips",
         default=False,
+    )
+    controlnet_is_enabled: bpy.props.BoolProperty(
+        name="Enable ControlNet",
+        default=False,
+        description="When true, will use ControlNet for each rendered image",
+    )
+    controlnet_weight: bpy.props.FloatProperty(
+        name="ControlNet Weight",
+        default=1.0,
+        soft_min=0.0,
+        soft_max=1.0,
+        min=0.0,
+        max=2.0,
+        description="How much influence ControlNet will have on guiding the rendered image output",
+    )
+    controlnet_close_help: bpy.props.BoolProperty(
+        name="Close ControlNet Help",
+        default=False,
+    )
+    controlnet_available_models: bpy.props.StringProperty(
+        name="ControlNet Models",
+        default="",
+        description="A list of the available ControlNet models (loaded from the Automatic1111 API)",
+    )
+    controlnet_available_modules: bpy.props.StringProperty(
+        name="ControlNet Modules (Preprocessors)",
+        default="",
+        description="A list of the available ControlNet modules (preprocessors) (loaded from the Automatic1111 API)",
+    )
+    controlnet_model: bpy.props.EnumProperty(
+        name="ControlNet Model",
+        items=get_available_controlnet_models,
+        description="Which ControlNet model to use (these must be downloaded and installed locally)",
+    )
+    controlnet_module: bpy.props.EnumProperty(
+        name="ControlNet Module",
+        items=get_available_controlnet_modules,
+        description="Which ControlNet module (preprocessor) to use (these come with the ControlNet extension)",
     )
 
 

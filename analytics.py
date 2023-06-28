@@ -118,8 +118,17 @@ def _track_event(event_name, event_params):
 # 2. track_event(event_name, value=value) - single value
 # 3. track_event(event_name) - no additional value
 def track_event(event_name, event_params=None, value=None):
+    # don't track events if opted out. (NOTE: can't use utils.get_addon_preferences() here because of circular import)
+    if \
+        not bpy.context.preferences.addons[__package__].preferences or \
+        bpy.context.preferences.addons[__package__].preferences.is_opted_out_of_analytics:
+        return
+
+    # prepare the event params if not provided
     if event_params is None:
         event_params = prepare_event(event_name, value=value)
+
+    # add the event to the task queue
     task_queue.add(functools.partial(_track_event, event_name, event_params))
 
 
@@ -162,7 +171,19 @@ def prepare_event(event_name, generation_params=None, additional_params=None, va
             "sampler": generation_params['sampler'],
             "is_animation_frame": additional_params['is_animation_frame'],
             "has_animated_prompt": additional_params['has_animated_prompt'],
+            "upscale_enabled": additional_params['upscale_enabled'],
+            "upscale_factor": additional_params['upscale_factor'],
+            "upscaler_model": additional_params['upscaler_model'],
+            "controlnet_enabled": additional_params['controlnet_enabled'],
+            "controlnet_model": additional_params['controlnet_model'],
+            "controlnet_module": additional_params['controlnet_module'],
             "duration": additional_params['duration'],
+        }
+
+    elif event_name == 'upscale_image':
+        return {
+            **shared_params,
+            **additional_params,
         }
 
     # raise an error if this event is not recognized

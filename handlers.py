@@ -21,9 +21,10 @@ def load_post_handler(context):
     if context.scene.air_props.is_enabled:
         operators.enable_air(context.scene)
 
-    # ensure that the sampler is set to a valid value (it could be wrong
-    # from an existing file with an older version of AI Render)
-    properties.ensure_sampler(None, context)
+    # ensure that the sampler and upscale model are set to valid values
+    # (the available options change when the user changes the SD backend, which could
+    # have happened since this file was last saved)
+    properties.ensure_properties(None, context)
 
     # update the sd backend to migrate a possible old value from a previous installation
     preferences.update_sd_backend_from_previous_installation(context)
@@ -55,9 +56,9 @@ def frame_change_pre_handler(scene):
     if not utils.is_installation_valid():
         return
 
-    # if we are rendering, track that we are rendering an animation
-    if scene.air_props.is_rendering and int(scene.air_props.animation_init_frame) != int(scene.frame_current):
-        scene.air_props.is_rendering_animation = True
+    # if we are rendering, track if we are rendering an animation
+    if scene.air_props.is_rendering:
+        scene.air_props.is_rendering_animation = int(scene.air_props.animation_init_frame) != int(scene.frame_current)
 
 
 @persistent
@@ -100,7 +101,7 @@ def render_complete_handler(scene):
         operators.do_pre_api_setup(scene)
 
         # post to the api (on a different thread, outside the handler)
-        task_queue.add(functools.partial(operators.send_to_api, scene))
+        task_queue.add(functools.partial(operators.sd_generate, scene))
     else:
         operators.handle_error("Rendered image is not ready. Try generating a new image manually under AI Render > Operation", "image_not_ready")
 
