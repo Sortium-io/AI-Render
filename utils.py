@@ -21,15 +21,17 @@ import bpy
 import re
 import os
 import shutil
+import math
 import tempfile
 from . import config
 from .sd_backends import (
     automatic1111_api,
     stability_api,
     stablehorde_api,
+    shark_api,
 )
 
-min_dimension_size = 512
+min_dimension_size = 128
 max_dimension_size = 2048
 valid_dimension_step_size = 64
 
@@ -47,6 +49,16 @@ def create_temp_file(prefix, suffix=".png"):
     return tempfile.NamedTemporaryFile(prefix=prefix, suffix=suffix).name
 
 
+def should_autosave_after_image(props):
+    # return true to signify we should autosave the after image, if that setting is on,
+    # and the path is valid, and we're not rendering an animation
+    return \
+        props.do_autosave_after_images \
+        and props.autosave_image_path \
+        and not props.is_rendering_animation \
+        and not props.is_rendering_animation_manually
+
+
 def get_filepath_in_package(path, filename="", starting_dir=__file__):
     """Convert a relative path in the add-on package to an absolute path"""
     script_path = os.path.dirname(os.path.realpath(starting_dir))
@@ -61,6 +73,14 @@ def get_absolute_path_for_output_file(path, filename):
 
 def does_path_exist(path):
     return os.path.exists(os.path.abspath(bpy.path.abspath(path)))
+
+
+def get_filename_from_path(file_path, include_extension=True):
+    filename_and_extension = os.path.splitext(os.path.basename(file_path))
+    if include_extension:
+        return filename_and_extension[0] + filename_and_extension[1]
+    else:
+        return filename_and_extension[0]
 
 
 def copy_file(src, dest):
@@ -139,11 +159,11 @@ def split_area(context, area, direction='HORIZONTAL', factor=0.5):
         bpy.ops.screen.area_split(override, direction=direction, factor=factor)
 
 
-def view_render_result_in_air_image_editor():
+def view_sd_result_in_air_image_editor(img):
     image_editor_area = get_area_by_type('IMAGE_EDITOR', config.workspace_id)
 
     if image_editor_area:
-        image_editor_area.spaces.active.image = bpy.data.images['Render Result']
+        image_editor_area.spaces.active.image = img
 
 
 def get_animated_prompt_text_data_block():
@@ -165,6 +185,19 @@ def sd_backend(context=None):
     return get_addon_preferences(context).sd_backend
 
 
+def sd_backend_formatted_name(context=None):
+    backend = sd_backend(context)
+
+    if backend == 'dreamstudio':
+        return 'DreamStudio'
+    elif backend == 'stablehorde':
+        return 'Stable Horde'
+    elif backend == 'automatic1111':
+        return 'Automatic1111'
+    elif backend == 'shark':
+        return 'SHARK by nod.ai'
+
+
 def local_sd_url(context=None):
     return get_addon_preferences(context).local_sd_url
 
@@ -179,6 +212,48 @@ def get_output_width(scene):
 
 def get_output_height(scene):
     return round(scene.render.resolution_y * scene.render.resolution_percentage / 100)
+
+
+def get_upscaled_width(scene):
+    if not scene:
+        scene = bpy.context.scene
+
+    upscale_factor = scene.air_props.upscale_factor
+    return round(get_output_width(scene) * upscale_factor)
+
+
+def get_upscaled_height(scene):
+    if not scene:
+        scene = bpy.context.scene
+
+    upscale_factor = scene.air_props.upscale_factor
+    return round(get_output_height(scene) * upscale_factor)
+
+
+def sanitized_upscaled_width(max_upscaled_image_size, scene=None):
+    if not scene:
+        scene = bpy.context.scene
+
+    upscaled_width = get_upscaled_width(scene)
+    upscaled_height = get_upscaled_height(scene)
+
+    if upscaled_width * upscaled_height > max_upscaled_image_size:
+        return round(math.sqrt(max_upscaled_image_size * (upscaled_width / upscaled_height)))
+    else:
+        return upscaled_width
+
+
+def sanitized_upscaled_height(max_upscaled_image_size, scene=None):
+    if not scene:
+        scene = bpy.context.scene
+
+    upscaled_width = get_upscaled_width(scene)
+    upscaled_height = get_upscaled_height(scene)
+
+    if upscaled_width * upscaled_height > max_upscaled_image_size:
+        return round(math.sqrt(max_upscaled_image_size * (upscaled_height / upscaled_width)))
+    else:
+        return upscaled_height
 
 
 def are_dimensions_valid(scene):
@@ -198,6 +273,14 @@ def are_dimensions_valid(scene):
 
 def are_dimensions_too_large(scene):
     return get_output_width(scene) * get_output_height(scene) > get_active_backend().max_image_size()
+
+
+def are_dimensions_too_small(scene):
+    return get_output_width(scene) * get_output_height(scene) < get_active_backend().min_image_size()
+
+
+def are_upscaled_dimensions_too_large(scene):
+    return get_upscaled_width(scene) * get_upscaled_height(scene) > get_active_backend().max_upscaled_image_size()
 
 
 def generate_example_dimensions_tuple_list():
@@ -327,12 +410,16 @@ def label_multiline(layout, text='', icon='NONE', width=-1, max_lines=12, use_ur
 
 
 def get_active_backend():
-    if sd_backend() == "dreamstudio":
+    backend = sd_backend()
+
+    if backend == "dreamstudio":
         return stability_api
-    elif sd_backend() == "stablehorde":
+    elif backend == "stablehorde":
         return stablehorde_api
-    elif sd_backend() == "automatic1111":
+    elif backend == "automatic1111":
         return automatic1111_api
+    elif backend == "shark":
+        return shark_api
 
 
 def is_installation_valid():
@@ -344,4 +431,3 @@ def show_invalid_installation_message(layout, width):
     box.label(text="Installation Error:")
 
     label_multiline(box, text=f"It looks like this add-on wasn't installed correctly. Please remove it and get a new copy. [Get AI Render]({config.ADDON_DOWNLOAD_URL})", icon="ERROR", alert=True, width=width)
-

@@ -13,6 +13,8 @@ from . import (
     utils,
 )
 
+from .sd_backends import automatic1111_api
+
 
 example_dimensions_tuple_list = utils.generate_example_dimensions_tuple_list()
 
@@ -22,12 +24,9 @@ def enable_air(scene):
     # because app timers get stopped when loading a new blender file)
     task_queue.register()
 
-    # ensure that we have our AI Render workspace with a compositor and image viewer,
-    # so the new rendered image will actually appear
+    # ensure that we have our AI Render workspace with an image viewer,
+    # so the new rendered image will be shown after the render is complete
     ensure_air_workspace()
-
-    # create the ai render compositor nodes
-    ensure_compositor_node_group(scene)
 
     # clear any possible past errors in the file (this would happen if ai render
     # was enabled in a file that we just opened, and it had been saved with
@@ -35,113 +34,15 @@ def enable_air(scene):
     clear_error(scene)
 
 
-def mute_compositor_node_group(scene):
-    compositor_nodes = scene.node_tree.nodes
-    compositor_nodes.get('AIR').mute = True
-
-
-def unmute_compositor_node_group(scene):
-    compositor_nodes = scene.node_tree.nodes
-    compositor_nodes.get('AIR').mute = False
-
-
-def update_compositor_node_with_image(scene, img):
-    compositor_nodes = scene.node_tree.nodes
-    image_node = compositor_nodes.get('AIR').node_tree.nodes.get('AIR_image_node')
-    image_node.image = img
-
-
-def get_or_create_composite_node(compositor_nodes):
-    """Get the existing Composite node, or create one"""
-    if compositor_nodes.get('Composite'):
-        return compositor_nodes.get('Composite')
-
-    for node in compositor_nodes:
-        if node.type == 'COMPOSITE':
-            return node
-
-    return compositor_nodes.new('CompositorNodeComposite')
-
-
-def get_or_create_render_layers_node(compositor_nodes):
-    """Get the existing Render Layers node, or create one"""
-    if compositor_nodes.get('Render Layers'):
-        return compositor_nodes.get('Render Layers')
-
-    for node in compositor_nodes:
-        if node.type == 'R_LAYERS':
-            return node
-
-    return compositor_nodes.new('CompositorNodeRLayers')
-
-
-def ensure_compositor_node_group(scene):
-    """Ensure that the compositor node group is created"""
-    scene.use_nodes = True
-    compositor_nodes = scene.node_tree.nodes
-
-    # if our image node already exists, just quit
-    if 'AIR' in compositor_nodes:
-        return {'FINISHED'}
-
-    # otherwise, create a new node group
-    node_tree = bpy.data.node_groups.new('AIR_node_group_v1', 'CompositorNodeTree')
-    node_tree.inputs.new('NodeSocketColor', 'Image')
-    node_tree.outputs.new('NodeSocketColor', 'Image')
-
-    node_group = compositor_nodes.new('CompositorNodeGroup')
-    node_group.node_tree = node_tree
-    node_group.location = (400, 500)
-    node_group.name = 'AIR'
-    node_group.label = 'AI Render'
-
-    group_input = node_tree.nodes.new(type='NodeGroupInput')
-    group_input.location = (0, 30)
-
-    group_output = node_tree.nodes.new(type='NodeGroupOutput')
-    group_output.location = (620, 0)
-
-    # create a new image node and mix rgb node in the group
-    image_node = node_tree.nodes.new(type='CompositorNodeImage')
-    image_node.name = 'AIR_image_node'
-    image_node.location = (60, -100)
-    image_node.label = 'AI Render Result'
-
-    mix_node = node_tree.nodes.new(type='CompositorNodeMixRGB')
-    mix_node.name = 'AIR_mix_node'
-    mix_node.location = (350, 75)
-
-    # get a reference to the new link functions, for convenience
-    create_link_in_group = node_tree.links.new
-    create_link_in_compositor = scene.node_tree.links.new
-
-    # create all the links within the group (group input node and image node to
-    # the mix node, and mix node to the group output node)
-    create_link_in_group(group_input.outputs[0], mix_node.inputs[1])
-    create_link_in_group(image_node.outputs.get('Image'), mix_node.inputs[2])
-    create_link_in_group(mix_node.outputs.get('Image'), group_output.inputs[0])
-
-    # get the socket that's currently linked to the compositor, or as a
-    # fallback, get the rendered image output
-    composite_node = get_or_create_composite_node(compositor_nodes)
-    render_layers_node = get_or_create_render_layers_node(compositor_nodes)
-
-    if composite_node.inputs.get('Image').is_linked:
-        original_socket = composite_node.inputs.get('Image').links[0].from_socket
-    else:
-        original_socket = render_layers_node.outputs.get('Image')
-
-    # link the original socket to the input of the group
-    create_link_in_compositor(original_socket, node_group.inputs[0])
-
-    # link the output of the group to the compositor node
-    create_link_in_compositor(node_group.outputs[0], composite_node.inputs.get('Image'))
-
-    return {'FINISHED'}
+def mute_legacy_compositor_node_group(scene):
+    if scene.node_tree and scene.node_tree.nodes:
+        legacy_node_group = scene.node_tree.nodes.get('AIR')
+        if legacy_node_group:
+            legacy_node_group.mute = True
 
 
 def ensure_air_workspace():
-    """Ensure we have a compositor window and an image viewer"""
+    """Ensure we have an AIR workspace with an image viewer"""
 
     # if the workspace isn't in our file, add it from our own included blend file
     if config.workspace_id not in bpy.data.workspaces:
@@ -157,7 +58,7 @@ def ensure_air_workspace():
 
 
 def activate_air_workspace(scene):
-    """Activate the special compositor workspace, and make sure it's viewing the render result"""
+    """Activate the special AIR workspace"""
     try:
         # utils.activate_workspace(workspace_id=config.workspace_id)
         # utils.view_render_result_in_air_image_editor()
@@ -251,7 +152,7 @@ def render_frame(context, current_frame, prompts):
     bpy.ops.render.render()
 
     # post to the api
-    return send_to_api(context.scene, prompts)
+    return sd_generate(context.scene, prompts)
 
 
 def save_render_to_file(scene, filename_prefix):
@@ -312,7 +213,7 @@ def save_animation_image(scene, filename_prefix, img_file):
         return handle_error(f"Couldn't save animation image to {bpy.path.abspath(full_path_and_filename)}", "save_image")
 
 
-def do_pre_render_setup(scene, do_mute_node_group=True):
+def do_pre_render_setup(scene):
     # Lock the user interface when rendering, so that we can change
     # compositor nodes in the render_init handler without causing a crash!
     # See: https://docs.blender.org/api/current/bpy.app.handlers.html#note-on-altering-data
@@ -321,19 +222,12 @@ def do_pre_render_setup(scene, do_mute_node_group=True):
     # clear any previous errors
     clear_error(scene)
 
-    # when the render is starting, ensure we have the right compositor nodes
-    ensure_compositor_node_group(scene)
-
-    # then mute the compositor node group, so we get the result of the original render,
-    # if that's what we want
-    if do_mute_node_group:
-        mute_compositor_node_group(scene)
-    else:
-        unmute_compositor_node_group(scene)
+    # mute the legacy compositor node group, if it exists
+    mute_legacy_compositor_node_group(scene)
 
 
 def do_pre_api_setup(scene):
-    # switch the workspace to our ai render compositor, so the new rendered image will actually appear
+    # switch the workspace to our AI Render workspace, so we can show the output when it's done
     activate_air_workspace(scene)
 
 
@@ -342,6 +236,8 @@ def validate_params(scene, prompt=None):
         return handle_error("You must enter an API Key to render with DreamStudio", "api_key")
     if not utils.are_dimensions_valid(scene):
         return handle_error("Please set width and height to valid values", "invalid_dimensions")
+    if utils.are_dimensions_too_small(scene):
+        return handle_error("Image dimensions are too small. Please increase width and/or height", "dimensions_too_small")
     if utils.are_dimensions_too_large(scene):
         return handle_error("Image dimensions are too large. Please decrease width and/or height", "dimensions_too_large")
     if prompt == "":
@@ -444,8 +340,8 @@ def validate_and_process_animated_prompt_text_for_single_frame(scene, frame):
         return get_prompt_at_frame(positive_lines, frame), get_prompt_at_frame(negative_lines, frame)
 
 
-def send_to_api(scene, prompts=None):
-    """Post to the API and process the resulting image"""
+def sd_generate(scene, prompts=None, use_last_sd_image=False):
+    """Post to the API to generate a Stable Diffusion image and then process it"""
     props = scene.air_props
 
     # get the prompt if we haven't been given one
@@ -474,20 +370,31 @@ def send_to_api(scene, prompts=None):
     after_output_filename_prefix = f"ai-render-{timestamp}-2-after"
     animation_output_filename_prefix = "ai-render-"
 
-    # save the rendered image and then read it back in
-    temp_input_file = save_render_to_file(scene, before_output_filename_prefix)
-    if not temp_input_file:
-        return False
-    img_file = open(temp_input_file, 'rb')
+    # if we want to use the last SD image, try loading it now
+    if use_last_sd_image:
+        if not props.last_generated_image_filename:
+            return handle_error("Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
+        try:
+            img_file = open(props.last_generated_image_filename, 'rb')
+        except:
+            return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
+    else:
+        # else, use the rendered image...
 
-    # autosave the before image, if we want that, and we're not rendering an animation
-    if (
-        props.do_autosave_before_images
-        and props.autosave_image_path
-        and not props.is_rendering_animation
-        and not props.is_rendering_animation_manually
-    ):
-        save_before_image(scene, before_output_filename_prefix)
+        # save the rendered image and then read it back in
+        temp_input_file = save_render_to_file(scene, before_output_filename_prefix)
+        if not temp_input_file:
+            return False
+        img_file = open(temp_input_file, 'rb')
+
+        # autosave the before image, if we want that, and we're not rendering an animation
+        if (
+            props.do_autosave_before_images
+            and props.autosave_image_path
+            and not props.is_rendering_animation
+            and not props.is_rendering_animation_manually
+        ):
+            save_before_image(scene, before_output_filename_prefix)
 
     # prepare data for the API request
     params = {
@@ -502,76 +409,142 @@ def send_to_api(scene, prompts=None):
         "sampler": props.sampler,
     }
 
+    # get the backend we're using
+    sd_backend = utils.get_active_backend()
+
     # send to whichever API we're using
     start_time = time.time()
-    output_file = utils.get_active_backend().send_to_api(params, img_file, after_output_filename_prefix, props.sd_model)
+    generated_image_file = sd_backend.generate(params, img_file, after_output_filename_prefix, props)
 
-    # if we got a successful image created, handle it
-    if output_file:
+    # if we didn't get a successful image, stop here (an error will have been handled by the api function)
+    if not generated_image_file:
+        return False
+ 
+    # autosave the after image, if we should
+    if utils.should_autosave_after_image(props):
+        generated_image_file = save_after_image(scene, after_output_filename_prefix, generated_image_file)
 
-        # init var
-        new_output_file = None
+    # store this image filename as the last generated image
+    props.last_generated_image_filename = generated_image_file
 
-        # autosave the after image, if we want that, and we're not rendering an animation
-        if (
-            props.do_autosave_after_images
-            and props.autosave_image_path
-            and not props.is_rendering_animation
-            and not props.is_rendering_animation_manually
-        ):
-            new_output_file = save_after_image(scene, after_output_filename_prefix, output_file)
+    # if we want to automatically upscale (and the backend supports it), do it now
+    if props.do_upscale_automatically and sd_backend.supports_upscaling() and sd_backend.is_upscaler_model_list_loaded():
+        after_output_filename_prefix = after_output_filename_prefix + "-upscaled"
 
-        # if we're rendering an animation manually, save the image to the animation output path
-        if props.is_rendering_animation_manually:
-            new_output_file = save_animation_image(scene, animation_output_filename_prefix, output_file)
+        opened_image_file = open(generated_image_file, 'rb')
+        generated_image_file = sd_backend.upscale(opened_image_file, after_output_filename_prefix, props)
 
-        # if we saved a new output image, use it
-        if new_output_file:
-            output_file = new_output_file
+        # if the upscale failed, stop here (an error will have been handled by the api function)
+        if not generated_image_file:
+            return False
 
-        # load the image into our scene
-        try:
-            img = bpy.data.images.load(output_file, check_existing=False)
-        except:
-            return handle_error("Couldn't load the image from Stable Diffusion", "load_sd_image")
+        # autosave the upscaled after image, if we should
+        if utils.should_autosave_after_image(props):
+            generated_image_file = save_after_image(scene, after_output_filename_prefix, generated_image_file)
 
-        # load the image into the compositor
-        try:
-            update_compositor_node_with_image(scene, img)
-        except:
-            return handle_error("Couldn't load the image into the compositor", "update_compositor")
+    # if we're rendering an animation manually, save the image to the animation output path
+    if props.is_rendering_animation_manually:
+        generated_image_file = save_animation_image(scene, animation_output_filename_prefix, generated_image_file)
 
-        # unmute the compositor node group
-        try:
-            unmute_compositor_node_group(scene)
-        except:
-            return handle_error("Couldn't unmute the compositor node", "unmute_compositor")
-
-        # track an analytics event
-        additional_params = {
-            "backend": utils.sd_backend(),
-            "model": props.sd_model if utils.get_active_backend().supports_choosing_model() else "none",
-            "preset_style": props.preset_style if props.use_preset else "none",
-            "is_animation_frame": "yes" if prompts else "no",
-            "has_animated_prompt": "yes" if props.use_animated_prompts else "no",
-            "duration": round(time.time() - start_time),
-        }
-        event_params = analytics.prepare_event('generate_image', generation_params=params, additional_params=additional_params)
-        analytics.track_event('generate_image', event_params=event_params)
-
-        print("Looking for AI Render output_file", output_file)
-        ai_image_output = bpy.data.images.load(output_file, check_existing=False)
+    # load the image into our scene
+    try:
+        print("Looking for AI Render output_file", generated_image_file)
+        ai_image_output = bpy.data.images.load(generated_image_file, check_existing=False)
         ai_image_output.name = "AI Render Output"
         print("AI Render output_file", ai_image_output)
+    except:
+        return handle_error("Couldn't load the image from Stable Diffusion", "load_sd_image")
 
-        # return success status
-        return True
+    # view the image in the AIR workspace
+    try:
+        utils.view_sd_result_in_air_image_editor(ai_image_output)
+    except:
+        return handle_error("Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
 
-    # else, an error should have been created by the api function
+    # track an analytics event
+    additional_params = {
+        "backend": utils.sd_backend(),
+        "model": props.sd_model if sd_backend.supports_choosing_model() else "none",
+        "preset_style": props.preset_style if props.use_preset else "none",
+        "is_animation_frame": "yes" if prompts else "no",
+        "has_animated_prompt": "yes" if props.use_animated_prompts else "no",
+        "upscale_enabled": "yes" if props.do_upscale_automatically else "no",
+        "upscale_factor": props.upscale_factor,
+        "upscaler_model": props.upscaler_model,
+        "duration": round(time.time() - start_time),
+    }
+    if props.controlnet_is_enabled and utils.sd_backend() == "automatic1111":
+        additional_params["controlnet_enabled"] = "yes"
+        additional_params["controlnet_model"] = props.controlnet_model
+        additional_params["controlnet_module"] = props.controlnet_module
     else:
+        additional_params["controlnet_enabled"] = "no"
+        additional_params["controlnet_model"] = "none"
+        additional_params["controlnet_module"] = "none"
+    event_params = analytics.prepare_event('generate_image', generation_params=params, additional_params=additional_params)
+    analytics.track_event('generate_image', event_params=event_params)
 
-        # return error status
+    
+    # return success
+    return True
+
+
+def sd_upscale(scene):
+    """Post to the API to upscale the most recent Stable Diffusion image and then process it"""
+    props = scene.air_props
+
+    # try loading the last SD image
+    if not props.last_generated_image_filename:
+        return handle_error("Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
+    try:
+        img_file = open(props.last_generated_image_filename, 'rb')
+    except:
+        return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
+
+    # create a filename for the after image, based on the before image
+    # get the filename from the full path and filename
+    after_output_filename_prefix = utils.get_filename_from_path(props.last_generated_image_filename, False) + "-upscaled"
+
+    # get the backend we're using
+    sd_backend = utils.get_active_backend()
+
+    # send to whichever API we're using
+    start_time = time.time()
+    generated_image_file = sd_backend.upscale(img_file, after_output_filename_prefix, props)
+
+    # if we didn't get a successful image, stop here (an error will have been handled by the api function)
+    if not generated_image_file:
         return False
+
+    # autosave the image, if we should
+    if utils.should_autosave_after_image(props):
+        generated_image_file = save_after_image(scene, after_output_filename_prefix, generated_image_file)
+
+    # load the image into our scene
+    try:
+        img = bpy.data.images.load(generated_image_file, check_existing=False)
+    except:
+        return handle_error("Couldn't load the image from Stable Diffusion", "load_sd_image")
+
+    # view the image in the AIR workspace
+    try:
+        utils.view_sd_result_in_air_image_editor(img)
+    except:
+        return handle_error("Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
+
+    # track an analytics event
+    additional_params = {
+        "backend": utils.sd_backend(),
+        "upscale_factor": props.upscale_factor,
+        "upscaler_model": props.upscaler_model,
+        "duration": round(time.time() - start_time),
+    }
+    event_params = analytics.prepare_event('upscale_image', additional_params=additional_params)
+    analytics.track_event('upscale_image', event_params=event_params)
+
+    # return success
+    return True
+
 
 
 class AIR_OT_enable(bpy.types.Operator):
@@ -583,6 +556,17 @@ class AIR_OT_enable(bpy.types.Operator):
     def execute(self, context):
         enable_air(context.scene)
         context.scene.air_props.is_enabled = True
+        return {'FINISHED'}
+
+
+class AIR_OT_disable(bpy.types.Operator):
+    "Disable AI Render in this scene"
+    bl_idname = "ai_render.disable"
+    bl_label = "Disable AI Render"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        context.scene.air_props.is_enabled = False
         return {'FINISHED'}
 
 
@@ -694,22 +678,37 @@ class AIR_OT_generate_new_image_from_render(bpy.types.Operator):
         do_pre_api_setup(context.scene)
 
         # post to the api (on a different thread, outside the operator)
-        task_queue.add(functools.partial(send_to_api, context.scene))
+        task_queue.add(functools.partial(sd_generate, context.scene))
 
         return {'FINISHED'}
 
 
-class AIR_OT_generate_new_image_from_current(bpy.types.Operator):
-    "Generate a new Stable Diffusion image - without re-rendering - using the latest Stable Diffusion image as the starting point"
+class AIR_OT_generate_new_image_from_last_sd_image(bpy.types.Operator):
+    "Generate a new Stable Diffusion image - without re-rendering - using the most recent Stable Diffusion image as the starting point"
     bl_idname = "ai_render.generate_new_image_from_current"
     bl_label = "New Image From Last AI Image"
 
     def execute(self, context):
-        do_pre_render_setup(context.scene, do_mute_node_group=False)
+        do_pre_render_setup(context.scene)
         do_pre_api_setup(context.scene)
 
         # post to the api (on a different thread, outside the operator)
-        task_queue.add(functools.partial(send_to_api, context.scene))
+        task_queue.add(functools.partial(sd_generate, context.scene, None, True))
+
+        return {'FINISHED'}
+
+
+class AIR_OT_upscale_last_sd_image(bpy.types.Operator):
+    "Upscale the most recent Stable Diffusion image"
+    bl_idname = "ai_render.upscale_last_sd_image"
+    bl_label = "Upscale Last AI Image"
+
+    def execute(self, context):
+        do_pre_render_setup(context.scene)
+        do_pre_api_setup(context.scene)
+
+        # post to the api (on a different thread, outside the operator)
+        task_queue.add(functools.partial(sd_upscale, context.scene))
 
         return {'FINISHED'}
 
@@ -933,19 +932,69 @@ class AIR_OT_show_error_popup(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class AIR_OT_automatic1111_load_upscaler_models(bpy.types.Operator):
+    "Load the available upscaler models from Automatic1111"
+    bl_idname = "ai_render.automatic1111_load_upscaler_models"
+    bl_label = "Load ControlNet Models"
+
+    def execute(self, context):
+        automatic1111_api.load_upscaler_models(context)
+        return {'FINISHED'}
+
+
+class AIR_OT_automatic1111_load_controlnet_models(bpy.types.Operator):
+    "Load the available ControlNet models from Automatic1111"
+    bl_idname = "ai_render.automatic1111_load_controlnet_models"
+    bl_label = "Load ControlNet Models"
+
+    def execute(self, context):
+        automatic1111_api.load_controlnet_models(context)
+        return {'FINISHED'}
+
+
+class AIR_OT_automatic1111_load_controlnet_modules(bpy.types.Operator):
+    "Load the available ControlNet modules (preprocessors) from Automatic1111"
+    bl_idname = "ai_render.automatic1111_load_controlnet_modules"
+    bl_label = "Load ControlNet Modules"
+
+    def execute(self, context):
+        automatic1111_api.load_controlnet_modules(context)
+        return {'FINISHED'}
+
+
+class AIR_OT_automatic1111_load_controlnet_models_and_modules(bpy.types.Operator):
+    "Load the available ControlNet models and modules (preprocessors) from Automatic1111"
+    bl_idname = "ai_render.automatic1111_load_controlnet_models_and_modules"
+    bl_label = "Load ControlNet Models and Modules"
+
+    def execute(self, context):
+        # load the models and modules from the Automatic1111 API
+        automatic1111_api.load_controlnet_models(context) and automatic1111_api.load_controlnet_modules(context)
+
+        # set the default values for the ControlNet model and module
+        automatic1111_api.choose_controlnet_defaults(context)
+        return {'FINISHED'}
+
+
 
 classes = [
     AIR_OT_enable,
+    AIR_OT_disable,
     AIR_OT_set_image_size_to_512x512,
     AIR_OT_set_image_size_to_768x768,
     AIR_OT_show_other_dimension_options,
     AIR_OT_copy_preset_text,
     AIR_OT_edit_animated_prompts,
     AIR_OT_generate_new_image_from_render,
-    AIR_OT_generate_new_image_from_current,
+    AIR_OT_generate_new_image_from_last_sd_image,
+    AIR_OT_upscale_last_sd_image,
     AIR_OT_render_animation,
     AIR_OT_setup_instructions_popup,
     AIR_OT_show_error_popup,
+    AIR_OT_automatic1111_load_upscaler_models,
+    AIR_OT_automatic1111_load_controlnet_models,
+    AIR_OT_automatic1111_load_controlnet_modules,
+    AIR_OT_automatic1111_load_controlnet_models_and_modules,
 ]
 
 
