@@ -275,6 +275,11 @@ class AIRProperties(bpy.types.PropertyGroup):
         items=get_available_controlnet_modules,
         description="Which ControlNet module (preprocessor) to use (these come with the ControlNet extension)",
     )
+    segmentation_image_name: bpy.props.StringProperty(
+        name="Object segmentation map image Name",
+        default="",
+        description="The name of the segmentation map image to use as input to ControlNet",
+    )
 
 
 classes = [

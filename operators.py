@@ -180,6 +180,19 @@ def save_render_to_file(scene, filename_prefix):
 
     return temp_file
 
+def save_segmentation_image_to_temp_file(segmentation_image_name):
+    try:
+        temp_file = utils.create_temp_file(segmentation_image_name + "-")
+    except:
+        return handle_error("Couldn't create temp file for segmentation image", "temp_file")
+    
+    try:
+        bpy.data.images[segmentation_image_name].save_render(temp_file)
+    except:
+        return handle_error("Couldn't save segmentation image", "save_segmentation_image")
+    
+    return temp_file
+    
 
 def save_before_image(scene, filename_prefix):
     ext = utils.get_extension_from_file_format(scene.render.image_settings.file_format)
@@ -340,7 +353,7 @@ def validate_and_process_animated_prompt_text_for_single_frame(scene, frame):
         return get_prompt_at_frame(positive_lines, frame), get_prompt_at_frame(negative_lines, frame)
 
 
-def sd_generate(scene, prompts=None, use_last_sd_image=False):
+def sd_generate(scene, prompts=None, use_last_sd_image=False, use_segmentation_map=False):
     """Post to the API to generate a Stable Diffusion image and then process it"""
     props = scene.air_props
 
@@ -378,6 +391,14 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False):
             img_file = open(props.last_generated_image_filename, 'rb')
         except:
             return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
+    elif use_segmentation_map:
+        try:
+            temp_input_file = save_segmentation_image_to_temp_file(props.segmentation_image_name)
+            if not temp_input_file:
+                return False
+            img_file = open(temp_input_file, 'rb')
+        except:
+            return handle_error("Couldn't load the segmentation map image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_segmentation_map_image")
     else:
         # else, use the rendered image...
 
@@ -414,7 +435,7 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False):
 
     # send to whichever API we're using
     start_time = time.time()
-    generated_image_file = sd_backend.generate(params, img_file, after_output_filename_prefix, props)
+    generated_image_file = sd_backend.generate(params, img_file, after_output_filename_prefix, props, use_segmentation_map)
 
     # if we didn't get a successful image, stop here (an error will have been handled by the api function)
     if not generated_image_file:
@@ -693,10 +714,33 @@ class AIR_OT_generate_new_image_from_last_sd_image(bpy.types.Operator):
         do_pre_api_setup(context.scene)
 
         # post to the api (on a different thread, outside the operator)
-        task_queue.add(functools.partial(sd_generate, context.scene, None, True))
+        task_queue.add(functools.partial(sd_generate, context.scene, None, True, False))
 
         return {'FINISHED'}
+    
+class AIR_OT_generate_new_image_from_segmentation_map(bpy.types.Operator):
+    "Generate a new Stable Diffusion image - using a generated segmentation map as the starting point"
+    bl_idname = "ai_render.generate_new_image_from_segmentation_map"
+    bl_label = "New Image From Segmentation Map"
 
+    smap_image_name = bpy.props.StringProperty(default="", name="Segmentation Map Image Name", description="Name of the image to use as the segmentation map")
+
+    @classmethod
+    def poll(cls, context):
+        return True
+
+    def execute(self, context):
+        do_pre_render_setup(context.scene)
+        do_pre_api_setup(context.scene)
+
+        self.report(
+            {'INFO'}, f"{self.smap_image_name}")
+
+        # post to the api (on a different thread, outside the operator)
+        task_queue.add(functools.partial(sd_generate, context.scene, None, False, True))
+
+        return {'FINISHED'}
+        
 
 class AIR_OT_upscale_last_sd_image(bpy.types.Operator):
     "Upscale the most recent Stable Diffusion image"
@@ -995,6 +1039,7 @@ classes = [
     AIR_OT_automatic1111_load_controlnet_models,
     AIR_OT_automatic1111_load_controlnet_modules,
     AIR_OT_automatic1111_load_controlnet_models_and_modules,
+    AIR_OT_generate_new_image_from_segmentation_map
 ]
 
 

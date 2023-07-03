@@ -10,14 +10,14 @@ from .. import (
 
 # CORE FUNCTIONS:
 
-def generate(params, img_file, filename_prefix, props):
+def generate(params, img_file, filename_prefix, props, is_text2image=False):
 
     # map the generic params to the specific ones for the Automatic1111 API
     map_params(params)
 
     # add a base 64 encoded image to the params
-    params["init_images"] = ["data:image/png;base64," + base64.b64encode(img_file.read()).decode()]
-    img_file.close()
+    if not is_text2image:
+        params["init_images"] = ["data:image/png;base64," + base64.b64encode(img_file.read()).decode()]
 
     # add args for ControlNet if it's enabled
     if props.controlnet_is_enabled:
@@ -32,6 +32,7 @@ def generate(params, img_file, filename_prefix, props):
             "controlnet": {
                 "args": [
                     {
+                    "input_image": base64.b64encode(img_file.read()).decode(),
                     "weight": controlnet_weight,
                     "module": controlnet_module,
                     "model": controlnet_model
@@ -40,9 +41,14 @@ def generate(params, img_file, filename_prefix, props):
             }
         }
 
+    img_file.close()
+
     # prepare the server url
     try:
-        server_url = get_server_url("/sdapi/v1/img2img")
+        if is_text2image:
+            server_url = get_server_url("/sdapi/v1/txt2img")
+        else:
+            server_url = get_server_url("/sdapi/v1/img2img")
     except:
         return operators.handle_error(f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_LOCAL_INSTALLATION_URL})", "local_server_url_missing")
 
