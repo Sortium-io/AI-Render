@@ -13,6 +13,7 @@ from .. import (
 def generate(params, img_file, filename_prefix, props, is_text2image=False):
 
     # map the generic params to the specific ones for the Automatic1111 API
+    print("params: ", params)
     map_params(params)
 
     # add a base 64 encoded image to the params
@@ -274,7 +275,7 @@ def supports_negative_prompts():
 
 
 def supports_choosing_model():
-    return False
+    return True
 
 
 def supports_upscaling():
@@ -320,6 +321,16 @@ def get_available_controlnet_modules(context):
             enum_list.append((item, item, ""))
         return enum_list
 
+def get_available_sd_models(context):
+    models = context.scene.air_props.sd_available_models
+
+    if (not models):
+        return []
+    else:
+        enum_list = []
+        for item in models.split("||||"):
+            enum_list.append((item, item, ""))
+        return enum_list
 
 def choose_controlnet_defaults(context):
     models = get_available_controlnet_models(context)
@@ -351,6 +362,25 @@ def choose_controlnet_defaults(context):
             context.scene.air_props.controlnet_module = module_selection
             return
 
+def load_sd_models(context):
+    try:
+        # get the list of available controlnet models from the Automatic1111 api
+        server_url = get_server_url("/sdapi/v1/sd-models")
+        headers = { "Accept": "application/json" }
+        response = requests.get(server_url, headers=headers, timeout=5)
+        response_obj = response.json()
+        print("Stable Diffusion models returned from Automatic1111 API:")
+        print(response_obj)
+
+        # store the list of models in the scene properties
+        models = [model["title"] for model in response_obj]
+        if not models:
+            return operators.handle_error(f"You don't have any Stable Diffusion models installed. You will need to download them from Hugging Face")
+        else:
+            context.scene.air_props.sd_available_models = "||||".join(models)
+            return True
+    except:
+        return operators.handle_error(f"Couldn't get the list of available Stable Diffusion models from the Automatic1111 server")
 
 def load_upscaler_models(context):
     try:

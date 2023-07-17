@@ -24,6 +24,12 @@ def get_available_upscaler_models(self, context):
 def get_default_upscaler_model():
     return utils.get_active_backend().default_upscaler_model()
 
+def get_available_sd_models(self, context):
+    if utils.sd_backend() == "automatic1111":
+        return automatic1111_api.get_available_sd_models(context)
+    else:
+        return []
+
 
 def get_available_controlnet_models(self, context):
     if utils.sd_backend() == "automatic1111":
@@ -114,16 +120,15 @@ class AIRProperties(bpy.types.PropertyGroup):
         max=150,
         description="How long to process the image. Values in the range of 25-50 generally work well. Higher values take longer (and use more credits) and may or may not improve results",
     )
+    sd_available_models: bpy.props.StringProperty(
+        name="Stable Diffusion Models",
+        default="",
+        description="A list of the available Stable Diffusion models (loaded from the Automatic1111 API)",
+    )
     sd_model: bpy.props.EnumProperty(
         name="Stable Diffusion Model",
-        default=40,
-        items=[
-            ('v1-5', 'SD 1.5', '', 20),
-            ('v2-0', 'SD 2.0', '', 30),
-            ('v2-1', 'SD 2.1', '', 40),
-            ('stable-diffusion-xl-beta-v2-2-2', 'SDXL Beta', '', 100),
-        ],
-        description="The Stable Diffusion model to use. SDXL is optimized for photorealism and detailed portraits (comparable to Midjourney). 2.x is more accurate than 1.5 with some types of images, and prompts differently from earlier versions. 1.5 is best for using artist names and art styles in prompts",
+        items=get_available_sd_models,
+        description="The Stable Diffusion model to use.",
     )
     sampler: bpy.props.EnumProperty(
         name="Sampler",

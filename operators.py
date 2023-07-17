@@ -417,8 +417,14 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False, use_segmentation_m
         ):
             save_before_image(scene, before_output_filename_prefix)
 
+    # get the backend we're using
+    sd_backend = utils.get_active_backend()
+
     # prepare data for the API request
     params = {
+        "override_settings": {
+            "sd_model_checkpoint": props.sd_model ,  
+        },
         "prompt": prompt,
         "negative_prompt": negative_prompt,
         "width": utils.get_output_width(scene),
@@ -430,8 +436,10 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False, use_segmentation_m
         "sampler": props.sampler,
     }
 
-    # get the backend we're using
-    sd_backend = utils.get_active_backend()
+    if sd_backend.supports_choosing_model():
+        params["override_settings"] = {
+            "sd_model_checkpoint": props.sd_model,
+        }
 
     # send to whichever API we're using
     start_time = time.time()
@@ -985,6 +993,15 @@ class AIR_OT_automatic1111_load_upscaler_models(bpy.types.Operator):
         automatic1111_api.load_upscaler_models(context)
         return {'FINISHED'}
 
+class AIR_OT_automatic1111_load_sd_models(bpy.types.Operator):
+    "Load the available Stable Diffusion models from Automatic1111"
+    bl_idname = "ai_render.automatic1111_load_sd_models"
+    bl_label = "Load Stable Diffusion Models"
+
+    def execute(self, context):
+        automatic1111_api.load_sd_models(context)
+        return {'FINISHED'}
+
 
 class AIR_OT_automatic1111_load_controlnet_models(bpy.types.Operator):
     "Load the available ControlNet models from Automatic1111"
@@ -1036,6 +1053,7 @@ classes = [
     AIR_OT_setup_instructions_popup,
     AIR_OT_show_error_popup,
     AIR_OT_automatic1111_load_upscaler_models,
+    AIR_OT_automatic1111_load_sd_models,
     AIR_OT_automatic1111_load_controlnet_models,
     AIR_OT_automatic1111_load_controlnet_modules,
     AIR_OT_automatic1111_load_controlnet_models_and_modules,

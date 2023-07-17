@@ -287,6 +287,10 @@ class AIR_PT_advanced_options(bpy.types.Panel):
         sub.prop(props, 'sampler', text="")
 
 
+        row = layout.row()
+        row.operator(operators.AIR_OT_automatic1111_load_sd_models.bl_idname, text="Load SD Models", icon="FILE_REFRESH")
+
+
 class AIR_PT_controlnet(bpy.types.Panel):
     bl_label = "ControlNet"
     bl_idname = "AIR_PT_controlnet"
