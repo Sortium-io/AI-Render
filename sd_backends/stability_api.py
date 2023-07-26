@@ -18,6 +18,7 @@ def generate(params, img_file, filename_prefix, props):
 
     # map the generic params to the specific ones for the Stability API
     mapped_params = map_params(params)
+    del mapped_params["tiling"]
 
     # create the headers
     headers = create_headers()
@@ -275,6 +276,8 @@ def supports_choosing_model():
 def supports_upscaling():
     return True
 
+def supports_tiling():
+    return False
 
 def supports_reloading_upscaler_models():
     return False

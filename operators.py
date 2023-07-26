@@ -187,7 +187,8 @@ def save_segmentation_image_to_temp_file(segmentation_image_name):
     
     try:
         bpy.data.images[segmentation_image_name].save_render(temp_file)
-    except:
+    except Exception as e:
+        print(e)
         return handle_error("Couldn't save segmentation image", "save_segmentation_image")
     
     return temp_file
@@ -352,7 +353,7 @@ def validate_and_process_animated_prompt_text_for_single_frame(scene, frame):
         return get_prompt_at_frame(positive_lines, frame), get_prompt_at_frame(negative_lines, frame)
 
 
-def sd_generate(scene, prompts=None, use_last_sd_image=False, use_segmentation_map=False):
+def sd_generate(scene, prompts=None, use_last_sd_image=False, txt2img=False):
     """Post to the API to generate a Stable Diffusion image and then process it"""
     props = scene.air_props
 
@@ -382,39 +383,34 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False, use_segmentation_m
     after_output_filename_prefix = f"ai-render-{timestamp}-2-after"
     animation_output_filename_prefix = "ai-render-"
 
+    img_file = None
+
     # if we want to use the last SD image, try loading it now
-    if use_last_sd_image:
-        if not props.last_generated_image_filename:
-            return handle_error("Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
-        try:
-            img_file = open(props.last_generated_image_filename, 'rb')
-        except:
-            return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
-    elif use_segmentation_map:
-        try:
-            temp_input_file = save_segmentation_image_to_temp_file(props.segmentation_image_name)
+    if not txt2img:
+        if use_last_sd_image:
+            if not props.last_generated_image_filename:
+                return handle_error("Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
+            try:
+                img_file = open(props.last_generated_image_filename, 'rb')
+            except:
+                return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
+        else:
+            # else, use the rendered image...
+
+            # save the rendered image and then read it back in
+            temp_input_file = save_render_to_file(scene, before_output_filename_prefix)
             if not temp_input_file:
                 return False
             img_file = open(temp_input_file, 'rb')
-        except:
-            return handle_error("Couldn't load the segmentation map image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_segmentation_map_image")
-    else:
-        # else, use the rendered image...
 
-        # save the rendered image and then read it back in
-        temp_input_file = save_render_to_file(scene, before_output_filename_prefix)
-        if not temp_input_file:
-            return False
-        img_file = open(temp_input_file, 'rb')
-
-        # autosave the before image, if we want that, and we're not rendering an animation
-        if (
-            props.do_autosave_before_images
-            and props.autosave_image_path
-            and not props.is_rendering_animation
-            and not props.is_rendering_animation_manually
-        ):
-            save_before_image(scene, before_output_filename_prefix)
+            # autosave the before image, if we want that, and we're not rendering an animation
+            if (
+                props.do_autosave_before_images
+                and props.autosave_image_path
+                and not props.is_rendering_animation
+                and not props.is_rendering_animation_manually
+            ):
+                save_before_image(scene, before_output_filename_prefix)
 
     # get the backend we're using
     sd_backend = utils.get_active_backend()
@@ -424,6 +420,7 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False, use_segmentation_m
         "override_settings": {
             "sd_model_checkpoint": props.sd_model ,  
         },
+        "tiling": props.automatic1111_tiling if sd_backend.supports_tiling() else False,
         "prompt": prompt,
         "negative_prompt": negative_prompt,
         "width": utils.get_output_width(scene),
@@ -442,7 +439,7 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False, use_segmentation_m
 
     # send to whichever API we're using
     start_time = time.time()
-    generated_image_file = sd_backend.generate(params, img_file, after_output_filename_prefix, props, use_segmentation_map)
+    generated_image_file = sd_backend.generate(params, img_file, after_output_filename_prefix, props, txt2img)
 
     # if we didn't get a successful image, stop here (an error will have been handled by the api function)
     if not generated_image_file:
@@ -490,7 +487,7 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False, use_segmentation_m
         return handle_error("Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
 
     # track an analytics event
-    additional_params = {
+    """ additional_params = {
         "backend": utils.sd_backend(),
         "model": props.sd_model if sd_backend.supports_choosing_model() else "none",
         "preset_style": props.preset_style if props.use_preset else "none",
@@ -510,131 +507,9 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False, use_segmentation_m
         additional_params["controlnet_model"] = "none"
         additional_params["controlnet_module"] = "none"
     event_params = analytics.prepare_event('generate_image', generation_params=params, additional_params=additional_params)
-    analytics.track_event('generate_image', event_params=event_params)
+    analytics.track_event('generate_image', event_params=event_params) """
 
     
-    # return success
-    return True
-
-
-def sd_upscale(scene):
-    """Post to the API to upscale the most recent Stable Diffusion image and then process it"""
-    props = scene.air_props
-
-    # try loading the last SD image
-    if not props.last_generated_image_filename:
-        return handle_error("Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
-    try:
-        img_file = open(props.last_generated_image_filename, 'rb')
-    except:
-        return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
-
-    # create a filename for the after image, based on the before image
-    # get the filename from the full path and filename
-    after_output_filename_prefix = utils.get_filename_from_path(props.last_generated_image_filename, False) + "-upscaled"
-
-    # get the backend we're using
-    sd_backend = utils.get_active_backend()
-
-    # send to whichever API we're using
-    start_time = time.time()
-    generated_image_file = sd_backend.upscale(img_file, after_output_filename_prefix, props)
-
-    # if we didn't get a successful image, stop here (an error will have been handled by the api function)
-    if not generated_image_file:
-        return False
-
-    # autosave the image, if we should
-    if utils.should_autosave_after_image(props):
-        generated_image_file = save_after_image(scene, after_output_filename_prefix, generated_image_file)
-
-    # load the image into our scene
-    try:
-        img = bpy.data.images.load(generated_image_file, check_existing=False)
-    except:
-        return handle_error("Couldn't load the image from Stable Diffusion", "load_sd_image")
-
-    # view the image in the AIR workspace
-    try:
-        utils.view_sd_result_in_air_image_editor(img)
-    except:
-        return handle_error("Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
-
-    # track an analytics event
-    additional_params = {
-        "backend": utils.sd_backend(),
-        "upscale_factor": props.upscale_factor,
-        "upscaler_model": props.upscaler_model,
-        "duration": round(time.time() - start_time),
-    }
-    event_params = analytics.prepare_event('upscale_image', additional_params=additional_params)
-    analytics.track_event('upscale_image', event_params=event_params)
-
-    # return success
-    return True
-
-
-    # autosave the after image, if we should
-    if utils.should_autosave_after_image(props):
-        generated_image_file = save_after_image(scene, after_output_filename_prefix, generated_image_file)
-
-    # store this image filename as the last generated image
-    props.last_generated_image_filename = generated_image_file
-
-    # if we want to automatically upscale (and the backend supports it), do it now
-    if props.do_upscale_automatically and sd_backend.supports_upscaling() and sd_backend.is_upscaler_model_list_loaded():
-        after_output_filename_prefix = after_output_filename_prefix + "-upscaled"
-
-        opened_image_file = open(generated_image_file, 'rb')
-        generated_image_file = sd_backend.upscale(opened_image_file, after_output_filename_prefix, props)
-
-        # if the upscale failed, stop here (an error will have been handled by the api function)
-        if not generated_image_file:
-            return False
-
-        # autosave the upscaled after image, if we should
-        if utils.should_autosave_after_image(props):
-            generated_image_file = save_after_image(scene, after_output_filename_prefix, generated_image_file)
-
-    # if we're rendering an animation manually, save the image to the animation output path
-    if props.is_rendering_animation_manually:
-        generated_image_file = save_animation_image(scene, animation_output_filename_prefix, generated_image_file)
-
-    # load the image into our scene
-    try:
-        img = bpy.data.images.load(generated_image_file, check_existing=False)
-    except:
-        return handle_error("Couldn't load the image from Stable Diffusion", "load_sd_image")
-
-    # view the image in the AIR workspace
-    try:
-        utils.view_sd_result_in_air_image_editor(img)
-    except:
-        return handle_error("Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
-
-    # track an analytics event
-    additional_params = {
-        "backend": utils.sd_backend(),
-        "model": props.sd_model if sd_backend.supports_choosing_model() else "none",
-        "preset_style": props.preset_style if props.use_preset else "none",
-        "is_animation_frame": "yes" if prompts else "no",
-        "has_animated_prompt": "yes" if props.use_animated_prompts else "no",
-        "upscale_enabled": "yes" if props.do_upscale_automatically else "no",
-        "upscale_factor": props.upscale_factor,
-        "upscaler_model": props.upscaler_model,
-        "duration": round(time.time() - start_time),
-    }
-    if props.controlnet_is_enabled and utils.sd_backend() == "automatic1111":
-        additional_params["controlnet_enabled"] = "yes"
-        additional_params["controlnet_model"] = props.controlnet_model
-        additional_params["controlnet_module"] = props.controlnet_module
-    else:
-        additional_params["controlnet_enabled"] = "no"
-        additional_params["controlnet_model"] = "none"
-        additional_params["controlnet_module"] = "none"
-    event_params = analytics.prepare_event('generate_image', generation_params=params, additional_params=additional_params)
-    analytics.track_event('generate_image', event_params=event_params)
-
     # return success
     return True
 
@@ -1017,6 +892,20 @@ class AIR_OT_generate_new_image_from_render(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class AIR_OT_generate_new_image_from_text(bpy.types.Operator):
+    "Generate a new Stable Diffusion image - without re-rendering - from the last rendered image"
+    bl_idname = "ai_render.generate_new_image_from_text"
+    bl_label = "New Image From Last Render"
+
+    def execute(self, context):
+        do_pre_render_setup(context.scene)
+        do_pre_api_setup(context.scene)
+
+        # post to the api (on a different thread, outside the operator)
+        task_queue.add(functools.partial(sd_generate, context.scene, None, False, True))
+
+        return {'FINISHED'}
+
 
 class AIR_OT_generate_new_image_from_last_sd_image(bpy.types.Operator):
     "Generate a new Stable Diffusion image - without re-rendering - using the most recent Stable Diffusion image as the starting point"
@@ -1029,29 +918,6 @@ class AIR_OT_generate_new_image_from_last_sd_image(bpy.types.Operator):
 
         # post to the api (on a different thread, outside the operator)
         task_queue.add(functools.partial(sd_generate, context.scene, None, True, False))
-
-        return {'FINISHED'}
-    
-class AIR_OT_generate_new_image_from_segmentation_map(bpy.types.Operator):
-    "Generate a new Stable Diffusion image - using a generated segmentation map as the starting point"
-    bl_idname = "ai_render.generate_new_image_from_segmentation_map"
-    bl_label = "New Image From Segmentation Map"
-
-    smap_image_name = bpy.props.StringProperty(default="", name="Segmentation Map Image Name", description="Name of the image to use as the segmentation map")
-
-    @classmethod
-    def poll(cls, context):
-        return True
-
-    def execute(self, context):
-        do_pre_render_setup(context.scene)
-        do_pre_api_setup(context.scene)
-
-        self.report(
-            {'INFO'}, f"{self.smap_image_name}")
-
-        # post to the api (on a different thread, outside the operator)
-        task_queue.add(functools.partial(sd_generate, context.scene, None, False, True))
 
         return {'FINISHED'}
         
@@ -1392,14 +1258,15 @@ classes = [
     AIR_OT_automatic1111_load_controlnet_models,
     AIR_OT_automatic1111_load_controlnet_modules,
     AIR_OT_automatic1111_load_controlnet_models_and_modules,
-    AIR_OT_generate_new_image_from_segmentation_map,
     AIR_OT_inpaint_from_last_sd_image,
     AIR_OT_outpaint_from_last_sd_image,
+    AIR_OT_generate_new_image_from_text
 ]
 
 
 def register():
     for cls in classes:
+        print(f"Registering {cls}")
         bpy.utils.register_class(cls)
 
 

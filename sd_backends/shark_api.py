@@ -14,6 +14,7 @@ from .. import (
 def generate(params, img_file, filename_prefix, props):
     # Configuring custom params for shark
     params["denoising_strength"] = round(1 - params["image_similarity"], 2)
+    del params["tiling"]
 
     # add a base 64 encoded image to the params
     params["init_images"] = ["data:image/png;base64," +
@@ -214,6 +215,9 @@ def max_upscaled_image_size():
 
 def supports_upscaling():
     return True
+
+def supports_tiling():
+    return False
 
 
 def get_image_format():

@@ -13,7 +13,6 @@ from .. import (
 def generate(params, img_file, filename_prefix, props, is_text2image=False):
 
     # map the generic params to the specific ones for the Automatic1111 API
-    print("params: ", params)
     map_params(params)
 
     # add a base 64 encoded image to the params
@@ -21,7 +20,9 @@ def generate(params, img_file, filename_prefix, props, is_text2image=False):
         params["init_images"] = ["data:image/png;base64," + base64.b64encode(img_file.read()).decode()]
 
     # add args for ControlNet if it's enabled
-    if props.controlnet_is_enabled:
+    if props.control_nets:
+        map_controlnet_params(params, props)
+    """ if props.controlnet_is_enabled:
         controlnet_model = props.controlnet_model
         controlnet_module = props.controlnet_module
         controlnet_weight = props.controlnet_weight
@@ -40,9 +41,9 @@ def generate(params, img_file, filename_prefix, props, is_text2image=False):
                     }
                 ]
             }
-        }
-
-    img_file.close()
+        } """
+    if img_file:
+        img_file.close()
 
     # prepare the server url
     try:
@@ -187,6 +188,45 @@ def map_params(params):
     params["denoising_strength"] = round(1 - params["image_similarity"], 2)
     params["sampler_index"] = params["sampler"]
 
+def map_controlnet_params(params, props):
+    controlnet_args = []
+    for controlnet_unit in props.control_nets:
+        try:
+            temp_file = utils.create_temp_file(controlnet_unit.image.filepath + "-")
+        except:
+            return handle_error("Couldn't create temp file for segmentation image", "temp_file")
+        
+        try:
+            controlnet_unit.image.save_render(temp_file)
+            img_file = open(temp_file, 'rb')
+        except Exception as e:
+            print(e)
+            return operators.handle_error("Couldn't save segmentation image", "save_segmentation_image")
+
+
+        controlnet_args.append({
+            "input_image": base64.b64encode(img_file.read()).decode(),
+            "weight": controlnet_unit.conditioning,
+            "module": controlnet_unit.preprocessor,
+            "model": controlnet_unit.model,
+            "lowvram": controlnet_unit.lowvram,
+            "processor_res": controlnet_unit.preprocessor_res,
+            "threshold_a": controlnet_unit.preprocessor_threshold_a,
+            "threshold_b": controlnet_unit.preprocessor_threshold_b,
+            "guidance_start": controlnet_unit.model_guidance_start,
+            "guidance_end": controlnet_unit.model_guidance_end,
+            "control_mode": controlnet_unit.control_mode,
+            "pixel_perfect": controlnet_unit.pixel_perfect,
+        })
+
+        img_file.close()
+
+    params["alwayson_scripts"] = {
+        "controlnet": {
+            "args": controlnet_args
+        }
+    }
+
 
 def do_post(url, data):
     # send the API request
@@ -281,6 +321,8 @@ def supports_choosing_model():
 def supports_upscaling():
     return True
 
+def supports_tiling():
+    return True
 
 def supports_reloading_upscaler_models():
     return True

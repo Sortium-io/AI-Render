@@ -73,6 +73,19 @@ def ensure_properties(self, context):
     ensure_sampler(context)
     ensure_upscaler_model(context)
 
+class AIRControlnet(bpy.types.PropertyGroup):
+    image: bpy.props.PointerProperty(type=bpy.types.Image)
+    preprocessor: bpy.props.StringProperty(name="Controlnet Preprocessor", default="none")
+    model: bpy.props.StringProperty(name="Controlnet Model", default="none")
+    conditioning: bpy.props.FloatProperty(name="Controlnet Conditioning", default=1.0)
+    lowvram: bpy.props.BoolProperty(name="Controlnet Low Ram", default=False)
+    preprocessor_res: bpy.props.IntProperty(name="Controlnet Preprocessor Resolution", default=64)
+    preprocessor_threshold_a: bpy.props.IntProperty(name="Controlnet Preprocessor Threshold A", default=64)
+    preprocessor_threshold_b: bpy.props.IntProperty(name="Controlnet Preprocessor Threshold B", default=64)
+    model_guidance_start: bpy.props.FloatProperty(name="Controlnet Model Guidance Start", default=0)
+    model_guidance_end: bpy.props.FloatProperty(name="Controlnet Model Guidance End", default=0)
+    control_mode: bpy.props.IntProperty(name="Controlnet Mode", default=0, min=0, max=2)
+    pixel_perfect: bpy.props.BoolProperty(name="Controlnet Pixel Perfect", default=False)
 
 class AIRProperties(bpy.types.PropertyGroup):
     is_enabled: bpy.props.BoolProperty(
@@ -211,6 +224,11 @@ class AIRProperties(bpy.types.PropertyGroup):
         items=get_available_upscaler_models,
         description="Which upscaler model to use",
     )
+    automatic1111_tiling: bpy.props.BoolProperty(
+        name="Automatic1111 Tiling",
+        default=False,
+        description="When true, will check the tiling option in the Automatic1111",
+    )
     automatic1111_available_upscaler_models: bpy.props.StringProperty(
         name="Automatic1111 Upscaler Models",
         default="Lanczos||||Nearest||||ESRGAN_4x||||LDSR||||ScuNET GAN||||ScuNET PSNR||||SwinIR 4x",
@@ -251,20 +269,7 @@ class AIRProperties(bpy.types.PropertyGroup):
         name="Close Animation Tips",
         default=False,
     )
-    controlnet_is_enabled: bpy.props.BoolProperty(
-        name="Enable ControlNet",
-        default=False,
-        description="When true, will use ControlNet for each rendered image",
-    )
-    controlnet_weight: bpy.props.FloatProperty(
-        name="ControlNet Weight",
-        default=1.0,
-        soft_min=0.0,
-        soft_max=1.0,
-        min=0.0,
-        max=2.0,
-        description="How much influence ControlNet will have on guiding the rendered image output",
-    )
+    control_nets: bpy.props.CollectionProperty(type=AIRControlnet)
     controlnet_close_help: bpy.props.BoolProperty(
         name="Close ControlNet Help",
         default=False,
@@ -278,16 +283,6 @@ class AIRProperties(bpy.types.PropertyGroup):
         name="ControlNet Modules (Preprocessors)",
         default="",
         description="A list of the available ControlNet modules (preprocessors) (loaded from the Automatic1111 API)",
-    )
-    controlnet_model: bpy.props.EnumProperty(
-        name="ControlNet Model",
-        items=get_available_controlnet_models,
-        description="Which ControlNet model to use (these must be downloaded and installed locally)",
-    )
-    controlnet_module: bpy.props.EnumProperty(
-        name="ControlNet Module",
-        items=get_available_controlnet_modules,
-        description="Which ControlNet module (preprocessor) to use (these come with the ControlNet extension)",
     )
     segmentation_image_name: bpy.props.StringProperty(
         name="Object segmentation map image Name",
@@ -351,7 +346,8 @@ class AIRProperties(bpy.types.PropertyGroup):
 
 
 classes = [
-    AIRProperties
+    AIRControlnet,
+    AIRProperties,
 ]
 
 
