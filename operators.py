@@ -1239,6 +1239,24 @@ class AIR_OT_outpaint_from_last_sd_image(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class AIR_OT_ControlNetsAdd(bpy.types.Operator):
+    bl_idname="ai_render.control_nets_add"
+    bl_label="Add Controlnet Unit"
+
+    def execute(self, context):
+        context.scene.air_props.control_nets.add()
+
+        return {'FINISHED'}
+
+class AIR_OT_ControlNetsRemove(bpy.types.Operator):
+    bl_idname = "ai_render.control_nets_remove"
+    bl_label = "Add ControlNet"
+
+    def execute(self, context):
+        context.scene.air_props.control_nets.remove(context.scene.air_props.active_control_net)
+        return {'FINISHED'}
+
+
 classes = [
     AIR_OT_enable,
     AIR_OT_disable,
@@ -1260,7 +1278,9 @@ classes = [
     AIR_OT_automatic1111_load_controlnet_models_and_modules,
     AIR_OT_inpaint_from_last_sd_image,
     AIR_OT_outpaint_from_last_sd_image,
-    AIR_OT_generate_new_image_from_text
+    AIR_OT_generate_new_image_from_text,
+    AIR_OT_ControlNetsAdd,
+    AIR_OT_ControlNetsRemove
 ]
 
 

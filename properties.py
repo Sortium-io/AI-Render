@@ -75,8 +75,8 @@ def ensure_properties(self, context):
 
 class AIRControlnet(bpy.types.PropertyGroup):
     image: bpy.props.PointerProperty(type=bpy.types.Image)
-    preprocessor: bpy.props.StringProperty(name="Controlnet Preprocessor", default="none")
-    model: bpy.props.StringProperty(name="Controlnet Model", default="none")
+    preprocessor: bpy.props.EnumProperty(name="Controlnet Preprocessor", items=get_available_controlnet_modules)
+    model: bpy.props.EnumProperty(name="Controlnet Model", items=get_available_controlnet_models)
     conditioning: bpy.props.FloatProperty(name="Controlnet Conditioning", default=1.0)
     lowvram: bpy.props.BoolProperty(name="Controlnet Low Ram", default=False)
     preprocessor_res: bpy.props.IntProperty(name="Controlnet Preprocessor Resolution", default=64)
@@ -84,7 +84,7 @@ class AIRControlnet(bpy.types.PropertyGroup):
     preprocessor_threshold_b: bpy.props.IntProperty(name="Controlnet Preprocessor Threshold B", default=64)
     model_guidance_start: bpy.props.FloatProperty(name="Controlnet Model Guidance Start", default=0)
     model_guidance_end: bpy.props.FloatProperty(name="Controlnet Model Guidance End", default=0)
-    control_mode: bpy.props.IntProperty(name="Controlnet Mode", default=0, min=0, max=2)
+    control_mode: bpy.props.EnumProperty(name="Controlnet Mode", items=(("Balanced", "Balanced", "", 0), ("My prompt is more important", "My prompt is more important", "", 1), ("ControlNet is more important", "ControlNet is more important", "", 2)))
     pixel_perfect: bpy.props.BoolProperty(name="Controlnet Pixel Perfect", default=False)
 
 class AIRProperties(bpy.types.PropertyGroup):
@@ -284,6 +284,7 @@ class AIRProperties(bpy.types.PropertyGroup):
         default="",
         description="A list of the available ControlNet modules (preprocessors) (loaded from the Automatic1111 API)",
     )
+    active_control_net: bpy.props.IntProperty(name="Active ControlNet")
     segmentation_image_name: bpy.props.StringProperty(
         name="Object segmentation map image Name",
         default="",
