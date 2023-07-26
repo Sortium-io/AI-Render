@@ -82,8 +82,8 @@ class AIRControlnet(bpy.types.PropertyGroup):
     preprocessor_res: bpy.props.IntProperty(name="Controlnet Preprocessor Resolution", default=64)
     preprocessor_threshold_a: bpy.props.IntProperty(name="Controlnet Preprocessor Threshold A", default=64)
     preprocessor_threshold_b: bpy.props.IntProperty(name="Controlnet Preprocessor Threshold B", default=64)
-    model_guidance_start: bpy.props.FloatProperty(name="Controlnet Model Guidance Start", default=0)
-    model_guidance_end: bpy.props.FloatProperty(name="Controlnet Model Guidance End", default=0)
+    model_guidance_start: bpy.props.FloatProperty(name="Controlnet Model Guidance Start", default=0.0)
+    model_guidance_end: bpy.props.FloatProperty(name="Controlnet Model Guidance End", default=1.0)
     control_mode: bpy.props.EnumProperty(name="Controlnet Mode", items=(("Balanced", "Balanced", "", 0), ("My prompt is more important", "My prompt is more important", "", 1), ("ControlNet is more important", "ControlNet is more important", "", 2)))
     pixel_perfect: bpy.props.BoolProperty(name="Controlnet Pixel Perfect", default=False)
 
