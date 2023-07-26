@@ -18,32 +18,11 @@ def generate(params, img_file, filename_prefix, props, is_text2image=False):
     # add a base 64 encoded image to the params
     if not is_text2image:
         params["init_images"] = ["data:image/png;base64," + base64.b64encode(img_file.read()).decode()]
+        img_file.close()
 
     # add args for ControlNet if it's enabled
     if props.control_nets:
         map_controlnet_params(params, props)
-    """ if props.controlnet_is_enabled:
-        controlnet_model = props.controlnet_model
-        controlnet_module = props.controlnet_module
-        controlnet_weight = props.controlnet_weight
-
-        if not controlnet_model:
-            return operators.handle_error(f"No ContolNet model selected. Either choose a new model or disable ControlNet. [Get help]({config.HELP_WITH_CONTROLNET_URL})", "controlnet_model_missing")
-
-        params["alwayson_scripts"] = {
-            "controlnet": {
-                "args": [
-                    {
-                    "input_image": base64.b64encode(img_file.read()).decode(),
-                    "weight": controlnet_weight,
-                    "module": controlnet_module,
-                    "model": controlnet_model
-                    }
-                ]
-            }
-        } """
-    if img_file:
-        img_file.close()
 
     # prepare the server url
     try:
@@ -192,7 +171,7 @@ def map_controlnet_params(params, props):
     controlnet_args = []
     for controlnet_unit in props.control_nets:
         try:
-            temp_file = utils.create_temp_file(controlnet_unit.image.filepath + "-")
+            temp_file = utils.create_temp_file(controlnet_unit.image.name + "-")
         except:
             return handle_error("Couldn't create temp file for segmentation image", "temp_file")
         
