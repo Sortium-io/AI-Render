@@ -344,7 +344,11 @@ class AIRProperties(bpy.types.PropertyGroup):
         step=0.01,
         name="Outpaint Color Variation",
     )
-
+    upscale_image_name: bpy.props.StringProperty(
+        name="Upscale image Name",
+        default="",
+        description="The name of the image to use as input for upscaling",
+    )
 
 classes = [
     AIRControlnet,

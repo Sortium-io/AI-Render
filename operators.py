@@ -179,17 +179,16 @@ def save_render_to_file(scene, filename_prefix):
 
     return temp_file
 
-def save_segmentation_image_to_temp_file(segmentation_image_name):
+def save_image_to_temp_file(image_name):
     try:
-        temp_file = utils.create_temp_file(segmentation_image_name + "-")
+        temp_file = utils.create_temp_file(image_name + "-")
     except:
-        return handle_error("Couldn't create temp file for segmentation image", "temp_file")
+        return handle_error("Couldn't create temp file for image", "temp_file")
     
     try:
-        bpy.data.images[segmentation_image_name].save_render(temp_file)
-    except Exception as e:
-        print(e)
-        return handle_error("Couldn't save segmentation image", "save_segmentation_image")
+        bpy.data.images[image_name].save_render(temp_file)
+    except:
+        return handle_error("Couldn't save image", "save_image_to_temp_file")
     
     return temp_file
     
@@ -514,28 +513,39 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False, txt2img=False):
     return True
 
 
-def sd_upscale(scene):
+def sd_upscale(scene, apply_to_last_image=True):
     """Post to the API to upscale the most recent Stable Diffusion image and then process it"""
     props = scene.air_props
 
-    # try loading the last SD image
-    if not props.last_generated_image_filename:
-        return handle_error("Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
-    try:
-        img_file = open(props.last_generated_image_filename, 'rb')
-    except:
-        return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
+    if apply_to_last_image:
+        # try loading the last SD image
+        if not props.last_generated_image_filename:
+            return handle_error("Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
+        try:
+            img_file = open(props.last_generated_image_filename, 'rb')
+            target_file_path = props.last_generated_image_filename
+        except:
+            return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
+    else:
+        try:
+            temp_input_file = save_image_to_temp_file(props.upscale_image_name)
+            if not temp_input_file:
+                return False
+            img_file = open(temp_input_file, 'rb')
+            target_file_path = temp_input_file
+        except:
+            return handle_error("Couldn't load the upscale image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_upscale_image")
 
     # create a filename for the after image, based on the before image
     # get the filename from the full path and filename
-    after_output_filename_prefix = utils.get_filename_from_path(props.last_generated_image_filename, False) + "-upscaled"
+    filename_prefix = utils.get_filename_from_path(target_file_path, False) + "-upscaled"
 
     # get the backend we're using
     sd_backend = utils.get_active_backend()
 
     # send to whichever API we're using
     start_time = time.time()
-    generated_image_file = sd_backend.upscale(img_file, after_output_filename_prefix, props)
+    generated_image_file = sd_backend.upscale(img_file, filename_prefix, props)
 
     # if we didn't get a successful image, stop here (an error will have been handled by the api function)
     if not generated_image_file:
@@ -543,17 +553,20 @@ def sd_upscale(scene):
 
     # autosave the image, if we should
     if utils.should_autosave_after_image(props):
-        generated_image_file = save_after_image(scene, after_output_filename_prefix, generated_image_file)
+        generated_image_file = save_after_image(scene, filename_prefix, generated_image_file)
 
     # load the image into our scene
     try:
-        img = bpy.data.images.load(generated_image_file, check_existing=False)
+        print("Looking for AI Render UPSCALE output_file", generated_image_file)
+        upscaled_image = bpy.data.images.load(generated_image_file, check_existing=False)
+        upscaled_image.name = "AI Render Upscale Output"
+        print("AI Render output_file", upscaled_image)
     except:
         return handle_error("Couldn't load the image from Stable Diffusion", "load_sd_image")
 
     # view the image in the AIR workspace
     try:
-        utils.view_sd_result_in_air_image_editor(img)
+        utils.view_sd_result_in_air_image_editor(upscaled_image)
     except:
         return handle_error("Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
 
@@ -936,6 +949,19 @@ class AIR_OT_upscale_last_sd_image(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class AIR_OT_upscale_sd_image(bpy.types.Operator):
+    "Upscale a Stable Diffusion image"
+    bl_idname = "ai_render.upscale_sd_image"
+    bl_label = "Upscale AI Image"
+
+    def execute(self, context):
+        do_pre_render_setup(context.scene)
+        do_pre_api_setup(context.scene)
+
+        # post to the api (on a different thread, outside the operator)
+        task_queue.add(functools.partial(sd_upscale, context.scene, False))
+
+        return {'FINISHED'}
 
 class AIR_OT_render_animation(bpy.types.Operator):
     "Render an animation using Stable Diffusion"
@@ -1268,6 +1294,7 @@ classes = [
     AIR_OT_generate_new_image_from_render,
     AIR_OT_generate_new_image_from_last_sd_image,
     AIR_OT_upscale_last_sd_image,
+    AIR_OT_upscale_sd_image,
     AIR_OT_render_animation,
     AIR_OT_setup_instructions_popup,
     AIR_OT_show_error_popup,
@@ -1286,7 +1313,6 @@ classes = [
 
 def register():
     for cls in classes:
-        print(f"Registering {cls}")
         bpy.utils.register_class(cls)
 
 
