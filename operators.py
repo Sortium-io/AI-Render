@@ -1231,7 +1231,6 @@ class AIR_OT_automatic1111_load_controlnet_models_and_modules(bpy.types.Operator
         automatic1111_api.load_controlnet_models(context) and automatic1111_api.load_controlnet_modules(context)
 
         # set the default values for the ControlNet model and module
-        automatic1111_api.choose_controlnet_defaults(context)
         return {'FINISHED'}
 
 
