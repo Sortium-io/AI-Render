@@ -532,7 +532,7 @@ def sd_upscale(scene, apply_to_last_image=True):
             return handle_error(scene, "Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
     else:
         try:
-            temp_input_file = save_image_to_temp_file(props.upscale_image_name)
+            temp_input_file = save_image_to_temp_file(scene, props.upscale_image_name)
             if not temp_input_file:
                 return False
             img_file = open(temp_input_file, 'rb')
