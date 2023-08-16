@@ -97,7 +97,7 @@ class AIRProperties(bpy.types.PropertyGroup):
         name="Prompt",
         description="Describe anything for Stable Diffusion to create",
         default=config.default_prompt_text,
-        update=operators.clear_error_handler,
+        #update=operators.clear_error_handler,
     )
     negative_prompt_text: bpy.props.StringProperty(
         name="Negative Prompt",
