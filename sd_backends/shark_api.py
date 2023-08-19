@@ -14,6 +14,7 @@ from .. import (
 def generate(params, img_file, filename_prefix, props):
     # Configuring custom params for shark
     params["denoising_strength"] = round(1 - params["image_similarity"], 2)
+    del params["tiling"]
 
     # add a base 64 encoded image to the params
     params["init_images"] = ["data:image/png;base64," +
@@ -24,7 +25,7 @@ def generate(params, img_file, filename_prefix, props):
     try:
         server_url = get_server_url("/sdapi/v1/img2img")
     except:
-        return operators.handle_error(f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_SHARK_INSTALLATION_URL})", "local_server_url_missing")
+        return operators.handle_error(None, f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_SHARK_INSTALLATION_URL})", "local_server_url_missing")
 
     # send the API request
     response = do_post(server_url, params)
@@ -59,7 +60,7 @@ def upscale(img_file, filename_prefix, props):
     try:
         server_url = get_server_url("/sdapi/v1/upscaler")
     except:
-        return operators.handle_error(f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_SHARK_INSTALLATION_URL})", "local_server_url_missing")
+        return operators.handle_error(None, f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_SHARK_INSTALLATION_URL})", "local_server_url_missing")
 
     response = do_post(server_url, data)
 
@@ -83,7 +84,7 @@ def inpaint(params, img_file, mask_file, filename_prefix, props):
     try:
         server_url = get_server_url("/sdapi/v1/inpaint")
     except:
-        return operators.handle_error(f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_SHARK_INSTALLATION_URL})", "local_server_url_missing")
+        return operators.handle_error(None, f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_SHARK_INSTALLATION_URL})", "local_server_url_missing")
 
     response = do_post(server_url, params)
 
@@ -104,7 +105,7 @@ def outpaint(params, img_file, filename_prefix, props):
     try:
         server_url = get_server_url("/sdapi/v1/outpaint")
     except:
-        return operators.handle_error(f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_SHARK_INSTALLATION_URL})", "local_server_url_missing")
+        return operators.handle_error(None, f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_SHARK_INSTALLATION_URL})", "local_server_url_missing")
 
     response = do_post(server_url, params)
 
@@ -127,27 +128,27 @@ def handle_success(response, filename_prefix):
     except:
         print("SHARK response content: ")
         print(response.content)
-        return operators.handle_error("Received an unexpected response from the Shark Stable Diffusion server.", "unexpected_response")
+        return operators.handle_error(None, "Received an unexpected response from the Shark Stable Diffusion server.", "unexpected_response")
 
     # create a temp file
     try:
         output_file = utils.create_temp_file(filename_prefix + "-")
     except:
-        return operators.handle_error("Couldn't create a temp file to save image.", "temp_file")
+        return operators.handle_error(None, "Couldn't create a temp file to save image.", "temp_file")
 
     # decode base64 image
     try:
         img_binary = base64.b64decode(
             base64_img.replace("data:image/png;base64,", ""))
     except:
-        return operators.handle_error("Couldn't decode base64 image from the Shark Stable Diffusion server.", "base64_decode")
+        return operators.handle_error(None, "Couldn't decode base64 image from the Shark Stable Diffusion server.", "base64_decode")
 
     # save the image to the temp file
     try:
         with open(output_file, 'wb') as file:
             file.write(img_binary)
     except:
-        return operators.handle_error("Couldn't write to temp file.", "temp_file_write")
+        return operators.handle_error(None, "Couldn't write to temp file.", "temp_file_write")
 
     # return the temp file
     return output_file
@@ -160,16 +161,16 @@ def handle_error(response):
         try:
             response_obj = response.json()
             if response_obj.get('detail') and response_obj['detail'] == "Not Found":
-                return operators.handle_error(f"It looks like the SHARK server is running, but it's not in API mode. [Get help]({config.HELP_WITH_SHARK_TROUBLESHOOTING_URL})", "automatic1111_not_in_api_mode")
+                return operators.handle_error(None, f"It looks like the SHARK server is running, but it's not in API mode. [Get help]({config.HELP_WITH_SHARK_TROUBLESHOOTING_URL})", "automatic1111_not_in_api_mode")
             elif response_obj.get('detail') and response_obj['detail'] == "Sampler not found":
-                return operators.handle_error("The sampler you selected is not available on the SHARK Stable Diffusion server. Please select a different sampler.", "invalid_sampler")
+                return operators.handle_error(None, "The sampler you selected is not available on the SHARK Stable Diffusion server. Please select a different sampler.", "invalid_sampler")
             else:
-                return operators.handle_error(f"An error occurred in the SHARK Stable Diffusion server. Full server response: {json.dumps(response_obj)}", "unknown_error")
+                return operators.handle_error(None, f"An error occurred in the SHARK Stable Diffusion server. Full server response: {json.dumps(response_obj)}", "unknown_error")
         except:
-            return operators.handle_error(f"It looks like the SHARK server is running, but it's not in API mode. [Get help]({config.HELP_WITH_SHARK_TROUBLESHOOTING_URL})", "automatic1111_not_in_api_mode")
+            return operators.handle_error(None, f"It looks like the SHARK server is running, but it's not in API mode. [Get help]({config.HELP_WITH_SHARK_TROUBLESHOOTING_URL})", "automatic1111_not_in_api_mode")
 
     else:
-        return operators.handle_error(f"An error occurred in the SHARK Stable Diffusion server. Check the server logs for more info, or check out the SHARK Troubleshooting guide. [Get help]({config.HELP_WITH_SHARK_TROUBLESHOOTING_URL})", "unknown_error_response")
+        return operators.handle_error(None, f"An error occurred in the SHARK Stable Diffusion server. Check the server logs for more info, or check out the SHARK Troubleshooting guide. [Get help]({config.HELP_WITH_SHARK_TROUBLESHOOTING_URL})", "unknown_error_response")
 
 
 def create_headers():
@@ -185,11 +186,11 @@ def do_post(url, data):
     try:
         return requests.post(url, json=data, headers=create_headers(), timeout=utils.local_sd_timeout())
     except requests.exceptions.ConnectionError:
-        return operators.handle_error(f"The local Stable Diffusion server couldn't be found. It's either not running, or it's running at a different location than what you specified in the add-on preferences. [Get help]({config.HELP_WITH_SHARK_INSTALLATION_URL})", "local_server_not_found")
+        return operators.handle_error(None, f"The local Stable Diffusion server couldn't be found. It's either not running, or it's running at a different location than what you specified in the add-on preferences. [Get help]({config.HELP_WITH_SHARK_INSTALLATION_URL})", "local_server_not_found")
     except requests.exceptions.MissingSchema:
-        return operators.handle_error(f"The url for your local Stable Diffusion server is invalid. Please set it correctly in the add-on preferences. [Get help]({config.HELP_WITH_SHARK_INSTALLATION_URL})", "local_server_url_invalid")
+        return operators.handle_error(None, f"The url for your local Stable Diffusion server is invalid. Please set it correctly in the add-on preferences. [Get help]({config.HELP_WITH_SHARK_INSTALLATION_URL})", "local_server_url_invalid")
     except requests.exceptions.ReadTimeout:
-        return operators.handle_error("The local Stable Diffusion server timed out. Set a longer timeout in AI Render preferences, or use a smaller image size.", "timeout")
+        return operators.handle_error(None, "The local Stable Diffusion server timed out. Set a longer timeout in AI Render preferences, or use a smaller image size.", "timeout")
 
 
 def get_server_url(path):
@@ -214,6 +215,9 @@ def max_upscaled_image_size():
 
 def supports_upscaling():
     return True
+
+def supports_tiling():
+    return False
 
 
 def get_image_format():

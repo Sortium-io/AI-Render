@@ -287,6 +287,17 @@ class AIR_PT_advanced_options(bpy.types.Panel):
         sub.prop(props, 'sampler', text="")
 
 
+        row = layout.row()
+        row.operator(operators.AIR_OT_automatic1111_load_sd_models.bl_idname, text="Load SD Models", icon="FILE_REFRESH")
+
+class AIR_LT_ControlNetList(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
+        layout.separator()
+        layout.prop(item, "model", text="")
+        layout.prop(item, "preprocessor", text="")
+        layout.template_ID(item, "image", open="image.open")
+
+
 class AIR_PT_controlnet(bpy.types.Panel):
     bl_label = "ControlNet"
     bl_idname = "AIR_PT_controlnet"
@@ -322,41 +333,16 @@ class AIR_PT_controlnet(bpy.types.Panel):
 
             layout.separator()
 
-        # Enable
-        row = layout.row()
-        row.prop(props, 'controlnet_is_enabled', text="Enable")
-
         # ControlNet Load Models and Modules
         if not props.controlnet_available_models:
             row = layout.row()
             row.operator(operators.AIR_OT_automatic1111_load_controlnet_models_and_modules.bl_idname, text="Load Models from Automatic1111", icon="FILE_REFRESH")
         else:
-            # Heads up box
-            if props.controlnet_is_enabled:
-                box = layout.box()
-                row = box.row()
-                row.label(text="ControlNet will be used for each render")
-
-            # ControlNet Module (Preprocessor)
             row = layout.row()
-            row.prop(props, 'controlnet_module', text="Preprocessor")
-
-            split = row.split(align=True)
-            split.operator(operators.AIR_OT_automatic1111_load_controlnet_modules.bl_idname, text="", icon="FILE_REFRESH")
-
-            # ControlNet Model
-            row = layout.row()
-            row.prop(props, 'controlnet_model', text="Model")
-
-            split = row.split(align=True)
-            split.operator(operators.AIR_OT_automatic1111_load_controlnet_models.bl_idname, text="", icon="FILE_REFRESH")
-
-            # ControlNet Weight
-            row = layout.row()
-            sub = row.column()
-            sub.label(text="Weight")
-            sub = row.column()
-            sub.prop(props, 'controlnet_weight', text="", slider=False)
+            row.template_list("AIR_LT_ControlNetList", "", props, "control_nets", props, "active_control_net")
+            col = row.column(align=True)
+            col.operator("ai_render.control_nets_add", icon='ADD', text="")
+            col.operator("ai_render.control_nets_remove", icon='REMOVE', text="")
 
 
 class AIR_PT_operation(bpy.types.Panel):
@@ -655,6 +641,7 @@ class AIR_PT_animation(bpy.types.Panel):
 
 
 classes = [
+    AIR_LT_ControlNetList,
     AIR_PT_main,
     AIR_PT_setup,
     AIR_PT_prompt,

@@ -64,7 +64,7 @@ def activate_air_workspace(scene):
         pass
     except:
         scene.air_props.is_enabled = False
-        handle_error("Couldn't find the AI Render workspace. Please re-enable AI Render, or deactivate the AI Render add-on.", "no_workspace")
+        handle_error(scene, "Couldn't find the AI Render workspace. Please re-enable AI Render, or deactivate the AI Render add-on.", "no_workspace")
 
 
 def set_image_dimensions(context, width, height):
@@ -75,9 +75,13 @@ def set_image_dimensions(context, width, height):
     clear_error(context.scene)
 
 
-def handle_error(msg, error_key = ''):
+def handle_error(scene, msg, error_key = ''):
     """Show an error popup, and set the error message to be displayed in the ui"""
     print("AI Render Error:", msg)
+    if scene:
+        scene.air_props.error_message = msg
+    else:
+        bpy.context.scene.air_props.error_message = msg
     task_queue.add(functools.partial(bpy.ops.ai_render.show_error_popup, 'INVOKE_DEFAULT', error_message=msg, error_key=error_key))
     analytics.track_event('ai_render_error', value=error_key)
     return False
@@ -132,7 +136,7 @@ def ensure_animated_prompts_text_editor_in_workspace(context):
         if area is None:
             area = utils.get_area_by_type('IMAGE_EDITOR', workspace_id=config.workspace_id)
         if area is None:
-            return handle_error("Couldn't find the right areas in the AI Render workspace. Please re-enable AI Render.", "invalid_workspace")
+            return handle_error(context.scene, "Couldn't find the right areas in the AI Render workspace. Please re-enable AI Render.", "invalid_workspace")
 
         utils.split_area(context, area, factor=0.3)
 
@@ -158,7 +162,7 @@ def save_render_to_file(scene, filename_prefix):
     try:
         temp_file = utils.create_temp_file(filename_prefix + "-", suffix=f".{utils.get_active_backend().get_image_format().lower()}")
     except:
-        return handle_error("Couldn't create temp file for image", "temp_file")
+        return handle_error(scene, "Couldn't create temp file for image", "temp_file")
 
     try:
         orig_render_file_format = scene.render.image_settings.file_format
@@ -175,10 +179,23 @@ def save_render_to_file(scene, filename_prefix):
         scene.render.image_settings.color_mode = orig_render_color_mode
         scene.render.image_settings.color_depth = orig_render_color_depth
     except:
-        return handle_error("Couldn't save rendered image", "save_render")
+        return handle_error(scene, "Couldn't save rendered image", "save_render")
 
     return temp_file
 
+def save_image_to_temp_file(scene, image_name):
+    try:
+        temp_file = utils.create_temp_file(image_name + "-")
+    except:
+        return handle_error(scene, "Couldn't create temp file for image", "temp_file")
+    
+    try:
+        bpy.data.images[image_name].save_render(temp_file)
+    except:
+        return handle_error(scene, "Couldn't save image", "save_image_to_temp_file")
+    
+    return temp_file
+    
 
 def save_before_image(scene, filename_prefix):
     ext = utils.get_extension_from_file_format(scene.render.image_settings.file_format)
@@ -189,7 +206,7 @@ def save_before_image(scene, filename_prefix):
     try:
         bpy.data.images['Render Result'].save_render(bpy.path.abspath(full_path_and_filename))
     except:
-        return handle_error(f"Couldn't save 'before' image to {bpy.path.abspath(full_path_and_filename)}", "save_image")
+        return handle_error(scene, f"Couldn't save 'before' image to {bpy.path.abspath(full_path_and_filename)}", "save_image")
 
 
 def save_after_image(scene, filename_prefix, img_file):
@@ -199,7 +216,7 @@ def save_after_image(scene, filename_prefix, img_file):
         utils.copy_file(img_file, full_path_and_filename)
         return full_path_and_filename
     except:
-        return handle_error(f"Couldn't save 'after' image to {bpy.path.abspath(full_path_and_filename)}", "save_image")
+        return handle_error(scene, f"Couldn't save 'after' image to {bpy.path.abspath(full_path_and_filename)}", "save_image")
 
 
 def save_animation_image(scene, filename_prefix, img_file):
@@ -209,7 +226,7 @@ def save_animation_image(scene, filename_prefix, img_file):
         utils.copy_file(img_file, full_path_and_filename)
         return full_path_and_filename
     except:
-        return handle_error(f"Couldn't save animation image to {bpy.path.abspath(full_path_and_filename)}", "save_image")
+        return handle_error(scene, f"Couldn't save animation image to {bpy.path.abspath(full_path_and_filename)}", "save_image")
 
 
 def do_pre_render_setup(scene):
@@ -232,22 +249,22 @@ def do_pre_api_setup(scene):
 
 def validate_params(scene, prompt=None):
     if utils.get_dream_studio_api_key().strip() == "" and utils.sd_backend() == "dreamstudio":
-        return handle_error("You must enter an API Key to render with DreamStudio", "api_key")
+        return handle_error(scene, "You must enter an API Key to render with DreamStudio", "api_key")
     if not utils.are_dimensions_valid(scene):
-        return handle_error("Please set width and height to valid values", "invalid_dimensions")
+        return handle_error(scene, "Please set width and height to valid values", "invalid_dimensions")
     if utils.are_dimensions_too_small(scene):
-        return handle_error("Image dimensions are too small. Please increase width and/or height", "dimensions_too_small")
+        return handle_error(scene, "Image dimensions are too small. Please increase width and/or height", "dimensions_too_small")
     if utils.are_dimensions_too_large(scene):
-        return handle_error("Image dimensions are too large. Please decrease width and/or height", "dimensions_too_large")
+        return handle_error(scene, "Image dimensions are too large. Please decrease width and/or height", "dimensions_too_large")
     if prompt == "":
-        return handle_error("Please enter a prompt for Stable Diffusion", "prompt")
+        return handle_error(scene, "Please enter a prompt for Stable Diffusion", "prompt")
     return True
 
 
 def validate_animation_output_path(scene):
     props = scene.air_props
     if not utils.does_path_exist(props.animation_output_path):
-        return handle_error("Animation output path does not exist", "animation_output_path")
+        return handle_error(scene, "Animation output path does not exist", "animation_output_path")
     else:
         return True
 
@@ -279,7 +296,7 @@ def get_prompt_at_frame(animated_prompts, frame):
 def validate_and_process_animated_prompt_text(scene):
     text_data = utils.get_animated_prompt_text_data_block()
     if text_data is None:
-        return handle_error("Animated prompt text does not exist. Please edit animated prompts.", "animated_prompt_text_data_block")
+        return handle_error(scene, "Animated prompt text does not exist. Please edit animated prompts.", "animated_prompt_text_data_block")
 
     lines = text_data.as_string().splitlines()
     lines = [line.strip() for line in lines]
@@ -317,7 +334,7 @@ def validate_and_process_animated_prompt_text(scene):
             processed_lines = list(filter(lambda x: x['prompt'] != "", processed_lines))
 
         if len(processed_lines) == 0 and is_positive:
-            return handle_error(f"Animated Prompt text is empty or invalid. [Get help with animated prompts]({config.HELP_WITH_ANIMATED_PROMPTS_URL})", "animated_prompt_text")
+            return handle_error(scene, f"Animated Prompt text is empty or invalid. [Get help with animated prompts]({config.HELP_WITH_ANIMATED_PROMPTS_URL})", "animated_prompt_text")
 
         if len(processed_lines) > 0:
             processed_lines.sort(key=lambda x: x['start_frame'])
@@ -339,7 +356,7 @@ def validate_and_process_animated_prompt_text_for_single_frame(scene, frame):
         return get_prompt_at_frame(positive_lines, frame), get_prompt_at_frame(negative_lines, frame)
 
 
-def sd_generate(scene, prompts=None, use_last_sd_image=False):
+def sd_generate(scene, prompts=None, use_last_sd_image=False, txt2img=False):
     """Post to the API to generate a Stable Diffusion image and then process it"""
     props = scene.air_props
 
@@ -369,34 +386,44 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False):
     after_output_filename_prefix = f"ai-render-{timestamp}-2-after"
     animation_output_filename_prefix = "ai-render-"
 
+    img_file = None
+
     # if we want to use the last SD image, try loading it now
-    if use_last_sd_image:
-        if not props.last_generated_image_filename:
-            return handle_error("Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
-        try:
-            img_file = open(props.last_generated_image_filename, 'rb')
-        except:
-            return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
-    else:
-        # else, use the rendered image...
+    if not txt2img:
+        if use_last_sd_image:
+            if not props.last_generated_image_filename:
+                return handle_error(scene, "Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
+            try:
+                img_file = open(props.last_generated_image_filename, 'rb')
+            except:
+                return handle_error(scene, "Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
+        else:
+            # else, use the rendered image...
 
-        # save the rendered image and then read it back in
-        temp_input_file = save_render_to_file(scene, before_output_filename_prefix)
-        if not temp_input_file:
-            return False
-        img_file = open(temp_input_file, 'rb')
+            # save the rendered image and then read it back in
+            temp_input_file = save_render_to_file(scene, before_output_filename_prefix)
+            if not temp_input_file:
+                return False
+            img_file = open(temp_input_file, 'rb')
 
-        # autosave the before image, if we want that, and we're not rendering an animation
-        if (
-            props.do_autosave_before_images
-            and props.autosave_image_path
-            and not props.is_rendering_animation
-            and not props.is_rendering_animation_manually
-        ):
-            save_before_image(scene, before_output_filename_prefix)
+            # autosave the before image, if we want that, and we're not rendering an animation
+            if (
+                props.do_autosave_before_images
+                and props.autosave_image_path
+                and not props.is_rendering_animation
+                and not props.is_rendering_animation_manually
+            ):
+                save_before_image(scene, before_output_filename_prefix)
+
+    # get the backend we're using
+    sd_backend = utils.get_active_backend()
 
     # prepare data for the API request
     params = {
+        "override_settings": {
+            "sd_model_checkpoint": props.sd_model ,  
+        },
+        "tiling": props.automatic1111_tiling if sd_backend.supports_tiling() else False,
         "prompt": prompt,
         "negative_prompt": negative_prompt,
         "width": utils.get_output_width(scene),
@@ -408,12 +435,14 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False):
         "sampler": props.sampler,
     }
 
-    # get the backend we're using
-    sd_backend = utils.get_active_backend()
+    if sd_backend.supports_choosing_model():
+        params["override_settings"] = {
+            "sd_model_checkpoint": props.sd_model,
+        }
 
     # send to whichever API we're using
     start_time = time.time()
-    generated_image_file = sd_backend.generate(params, img_file, after_output_filename_prefix, props)
+    generated_image_file = sd_backend.generate(params, img_file, after_output_filename_prefix, props, txt2img)
 
     # if we didn't get a successful image, stop here (an error will have been handled by the api function)
     if not generated_image_file:
@@ -452,16 +481,16 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False):
         ai_image_output.name = "AI Render Output"
         print("AI Render output_file", ai_image_output)
     except:
-        return handle_error("Couldn't load the image from Stable Diffusion", "load_sd_image")
+        return handle_error(scene, "Couldn't load the image from Stable Diffusion", "load_sd_image")
 
     # view the image in the AIR workspace
     try:
         utils.view_sd_result_in_air_image_editor(ai_image_output)
     except:
-        return handle_error("Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
+        return handle_error(scene, "Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
 
     # track an analytics event
-    additional_params = {
+    """ additional_params = {
         "backend": utils.sd_backend(),
         "model": props.sd_model if sd_backend.supports_choosing_model() else "none",
         "preset_style": props.preset_style if props.use_preset else "none",
@@ -481,157 +510,46 @@ def sd_generate(scene, prompts=None, use_last_sd_image=False):
         additional_params["controlnet_model"] = "none"
         additional_params["controlnet_module"] = "none"
     event_params = analytics.prepare_event('generate_image', generation_params=params, additional_params=additional_params)
-    analytics.track_event('generate_image', event_params=event_params)
+    analytics.track_event('generate_image', event_params=event_params) """
 
     
     # return success
     return True
 
 
-def sd_upscale(scene):
+def sd_upscale(scene, apply_to_last_image=True):
     """Post to the API to upscale the most recent Stable Diffusion image and then process it"""
     props = scene.air_props
 
-    # try loading the last SD image
-    if not props.last_generated_image_filename:
-        return handle_error("Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
-    try:
-        img_file = open(props.last_generated_image_filename, 'rb')
-    except:
-        return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
-
-    # create a filename for the after image, based on the before image
-    # get the filename from the full path and filename
-    after_output_filename_prefix = utils.get_filename_from_path(props.last_generated_image_filename, False) + "-upscaled"
-
-    # get the backend we're using
-    sd_backend = utils.get_active_backend()
-
-    # send to whichever API we're using
-    start_time = time.time()
-    generated_image_file = sd_backend.upscale(img_file, after_output_filename_prefix, props)
-
-    # if we didn't get a successful image, stop here (an error will have been handled by the api function)
-    if not generated_image_file:
-        return False
-
-    # autosave the image, if we should
-    if utils.should_autosave_after_image(props):
-        generated_image_file = save_after_image(scene, after_output_filename_prefix, generated_image_file)
-
-    # load the image into our scene
-    try:
-        img = bpy.data.images.load(generated_image_file, check_existing=False)
-    except:
-        return handle_error("Couldn't load the image from Stable Diffusion", "load_sd_image")
-
-    # view the image in the AIR workspace
-    try:
-        utils.view_sd_result_in_air_image_editor(img)
-    except:
-        return handle_error("Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
-
-    # track an analytics event
-    additional_params = {
-        "backend": utils.sd_backend(),
-        "upscale_factor": props.upscale_factor,
-        "upscaler_model": props.upscaler_model,
-        "duration": round(time.time() - start_time),
-    }
-    event_params = analytics.prepare_event('upscale_image', additional_params=additional_params)
-    analytics.track_event('upscale_image', event_params=event_params)
-
-    # return success
-    return True
-
-
-    # autosave the after image, if we should
-    if utils.should_autosave_after_image(props):
-        generated_image_file = save_after_image(scene, after_output_filename_prefix, generated_image_file)
-
-    # store this image filename as the last generated image
-    props.last_generated_image_filename = generated_image_file
-
-    # if we want to automatically upscale (and the backend supports it), do it now
-    if props.do_upscale_automatically and sd_backend.supports_upscaling() and sd_backend.is_upscaler_model_list_loaded():
-        after_output_filename_prefix = after_output_filename_prefix + "-upscaled"
-
-        opened_image_file = open(generated_image_file, 'rb')
-        generated_image_file = sd_backend.upscale(opened_image_file, after_output_filename_prefix, props)
-
-        # if the upscale failed, stop here (an error will have been handled by the api function)
-        if not generated_image_file:
-            return False
-
-        # autosave the upscaled after image, if we should
-        if utils.should_autosave_after_image(props):
-            generated_image_file = save_after_image(scene, after_output_filename_prefix, generated_image_file)
-
-    # if we're rendering an animation manually, save the image to the animation output path
-    if props.is_rendering_animation_manually:
-        generated_image_file = save_animation_image(scene, animation_output_filename_prefix, generated_image_file)
-
-    # load the image into our scene
-    try:
-        img = bpy.data.images.load(generated_image_file, check_existing=False)
-    except:
-        return handle_error("Couldn't load the image from Stable Diffusion", "load_sd_image")
-
-    # view the image in the AIR workspace
-    try:
-        utils.view_sd_result_in_air_image_editor(img)
-    except:
-        return handle_error("Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
-
-    # track an analytics event
-    additional_params = {
-        "backend": utils.sd_backend(),
-        "model": props.sd_model if sd_backend.supports_choosing_model() else "none",
-        "preset_style": props.preset_style if props.use_preset else "none",
-        "is_animation_frame": "yes" if prompts else "no",
-        "has_animated_prompt": "yes" if props.use_animated_prompts else "no",
-        "upscale_enabled": "yes" if props.do_upscale_automatically else "no",
-        "upscale_factor": props.upscale_factor,
-        "upscaler_model": props.upscaler_model,
-        "duration": round(time.time() - start_time),
-    }
-    if props.controlnet_is_enabled and utils.sd_backend() == "automatic1111":
-        additional_params["controlnet_enabled"] = "yes"
-        additional_params["controlnet_model"] = props.controlnet_model
-        additional_params["controlnet_module"] = props.controlnet_module
+    if apply_to_last_image:
+        # try loading the last SD image
+        if not props.last_generated_image_filename:
+            return handle_error(scene, "Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
+        try:
+            img_file = open(props.last_generated_image_filename, 'rb')
+            target_file_path = props.last_generated_image_filename
+        except:
+            return handle_error(scene, "Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
     else:
-        additional_params["controlnet_enabled"] = "no"
-        additional_params["controlnet_model"] = "none"
-        additional_params["controlnet_module"] = "none"
-    event_params = analytics.prepare_event('generate_image', generation_params=params, additional_params=additional_params)
-    analytics.track_event('generate_image', event_params=event_params)
-
-    # return success
-    return True
-
-
-def sd_upscale(scene):
-    """Post to the API to upscale the most recent Stable Diffusion image and then process it"""
-    props = scene.air_props
-
-    # try loading the last SD image
-    if not props.last_generated_image_filename:
-        return handle_error("Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
-    try:
-        img_file = open(props.last_generated_image_filename, 'rb')
-    except:
-        return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
+        try:
+            temp_input_file = save_image_to_temp_file(scene, props.upscale_image_name)
+            if not temp_input_file:
+                return False
+            img_file = open(temp_input_file, 'rb')
+            target_file_path = temp_input_file
+        except:
+            return handle_error(scene, "Couldn't load the upscale image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_upscale_image")
 
     # create a filename for the after image, based on the before image
     # get the filename from the full path and filename
-    after_output_filename_prefix = utils.get_filename_from_path(props.last_generated_image_filename, False) + "-upscaled"
+    filename_prefix = utils.get_filename_from_path(target_file_path, False) + "-upscaled"
 
     # get the backend we're using
     sd_backend = utils.get_active_backend()
 
     # send to whichever API we're using
     start_time = time.time()
-    generated_image_file = sd_backend.upscale(img_file, after_output_filename_prefix, props)
+    generated_image_file = sd_backend.upscale(img_file, filename_prefix, props)
 
     # if we didn't get a successful image, stop here (an error will have been handled by the api function)
     if not generated_image_file:
@@ -639,19 +557,22 @@ def sd_upscale(scene):
 
     # autosave the image, if we should
     if utils.should_autosave_after_image(props):
-        generated_image_file = save_after_image(scene, after_output_filename_prefix, generated_image_file)
+        generated_image_file = save_after_image(scene, filename_prefix, generated_image_file)
 
     # load the image into our scene
     try:
-        img = bpy.data.images.load(generated_image_file, check_existing=False)
+        print("Looking for AI Render UPSCALE output_file", generated_image_file)
+        upscaled_image = bpy.data.images.load(generated_image_file, check_existing=False)
+        upscaled_image.name = "AI Render Upscale Output"
+        print("AI Render output_file", upscaled_image)
     except:
-        return handle_error("Couldn't load the image from Stable Diffusion", "load_sd_image")
+        return handle_error(scene, "Couldn't load the image from Stable Diffusion", "load_sd_image")
 
     # view the image in the AIR workspace
     try:
-        utils.view_sd_result_in_air_image_editor(img)
+        utils.view_sd_result_in_air_image_editor(upscaled_image)
     except:
-        return handle_error("Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
+        return handle_error(scene, "Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
 
     # track an analytics event
     additional_params = {
@@ -697,19 +618,19 @@ def sd_inpaint(scene):
 
     # if we want to use the last SD image, try loading it now
     if not props.last_generated_image_filename:
-        return handle_error("Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
+        return handle_error(scene, "Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
     try:
         img_file = open(props.last_generated_image_filename, 'rb')
     except:
-        return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
+        return handle_error(scene, "Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
 
     # load mask here
     if props.inpaint_mask_path == "":
-        return handle_error("Couldn't find the Inpaint Mask File", "inpaint_mask_path")
+        return handle_error(scene, "Couldn't find the Inpaint Mask File", "inpaint_mask_path")
     try:
         mask_file = open(props.inpaint_mask_path, 'rb')
     except:
-        return handle_error("Couldn't load the uploaded inpaint mask file", "inpaint_mask_path")
+        return handle_error(scene, "Couldn't load the uploaded inpaint mask file", "inpaint_mask_path")
 
     # prepare data for the API request
     params = {
@@ -750,13 +671,13 @@ def sd_inpaint(scene):
     try:
         img = bpy.data.images.load(generated_image_file, check_existing=False)
     except:
-        return handle_error("Couldn't load the image from Stable Diffusion", "load_sd_image")
+        return handle_error(scene, "Couldn't load the image from Stable Diffusion", "load_sd_image")
 
     # view the image in the AIR workspace
     try:
         utils.view_sd_result_in_air_image_editor(img)
     except:
-        return handle_error("Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
+        return handle_error(scene, "Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
 
     # return success
     return True
@@ -792,11 +713,11 @@ def sd_outpaint(scene):
 
     # if we want to use the last SD image, try loading it now
     if not props.last_generated_image_filename:
-        return handle_error("Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
+        return handle_error(scene, "Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
     try:
         img_file = open(props.last_generated_image_filename, 'rb')
     except:
-        return handle_error("Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
+        return handle_error(scene, "Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
 
 
     # prepare data for the API request
@@ -841,13 +762,13 @@ def sd_outpaint(scene):
     try:
         img = bpy.data.images.load(generated_image_file, check_existing=False)
     except:
-        return handle_error("Couldn't load the image from Stable Diffusion", "load_sd_image")
+        return handle_error(scene, "Couldn't load the image from Stable Diffusion", "load_sd_image")
 
     # view the image in the AIR workspace
     try:
         utils.view_sd_result_in_air_image_editor(img)
     except:
-        return handle_error("Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
+        return handle_error(scene, "Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
 
     # return success
     return True
@@ -988,6 +909,20 @@ class AIR_OT_generate_new_image_from_render(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class AIR_OT_generate_new_image_from_text(bpy.types.Operator):
+    "Generate a new Stable Diffusion image - without re-rendering - from the last rendered image"
+    bl_idname = "ai_render.generate_new_image_from_text"
+    bl_label = "New Image From Last Render"
+
+    def execute(self, context):
+        do_pre_render_setup(context.scene)
+        do_pre_api_setup(context.scene)
+
+        # post to the api (on a different thread, outside the operator)
+        task_queue.add(functools.partial(sd_generate, context.scene, None, False, True))
+
+        return {'FINISHED'}
+
 
 class AIR_OT_generate_new_image_from_last_sd_image(bpy.types.Operator):
     "Generate a new Stable Diffusion image - without re-rendering - using the most recent Stable Diffusion image as the starting point"
@@ -999,10 +934,10 @@ class AIR_OT_generate_new_image_from_last_sd_image(bpy.types.Operator):
         do_pre_api_setup(context.scene)
 
         # post to the api (on a different thread, outside the operator)
-        task_queue.add(functools.partial(sd_generate, context.scene, None, True))
+        task_queue.add(functools.partial(sd_generate, context.scene, None, True, False))
 
         return {'FINISHED'}
-
+        
 
 class AIR_OT_upscale_last_sd_image(bpy.types.Operator):
     "Upscale the most recent Stable Diffusion image"
@@ -1018,6 +953,19 @@ class AIR_OT_upscale_last_sd_image(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class AIR_OT_upscale_sd_image(bpy.types.Operator):
+    "Upscale a Stable Diffusion image"
+    bl_idname = "ai_render.upscale_sd_image"
+    bl_label = "Upscale AI Image"
+
+    def execute(self, context):
+        do_pre_render_setup(context.scene)
+        do_pre_api_setup(context.scene)
+
+        # post to the api (on a different thread, outside the operator)
+        task_queue.add(functools.partial(sd_upscale, context.scene, False))
+
+        return {'FINISHED'}
 
 class AIR_OT_render_animation(bpy.types.Operator):
     "Render an animation using Stable Diffusion"
@@ -1247,6 +1195,15 @@ class AIR_OT_automatic1111_load_upscaler_models(bpy.types.Operator):
         automatic1111_api.load_upscaler_models(context)
         return {'FINISHED'}
 
+class AIR_OT_automatic1111_load_sd_models(bpy.types.Operator):
+    "Load the available Stable Diffusion models from Automatic1111"
+    bl_idname = "ai_render.automatic1111_load_sd_models"
+    bl_label = "Load Stable Diffusion Models"
+
+    def execute(self, context):
+        automatic1111_api.load_sd_models(context)
+        return {'FINISHED'}
+
 
 class AIR_OT_automatic1111_load_controlnet_models(bpy.types.Operator):
     "Load the available ControlNet models from Automatic1111"
@@ -1278,7 +1235,6 @@ class AIR_OT_automatic1111_load_controlnet_models_and_modules(bpy.types.Operator
         automatic1111_api.load_controlnet_models(context) and automatic1111_api.load_controlnet_modules(context)
 
         # set the default values for the ControlNet model and module
-        automatic1111_api.choose_controlnet_defaults(context)
         return {'FINISHED'}
 
 
@@ -1312,6 +1268,24 @@ class AIR_OT_outpaint_from_last_sd_image(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class AIR_OT_ControlNetsAdd(bpy.types.Operator):
+    bl_idname="ai_render.control_nets_add"
+    bl_label="Add Controlnet Unit"
+
+    def execute(self, context):
+        context.scene.air_props.control_nets.add()
+
+        return {'FINISHED'}
+
+class AIR_OT_ControlNetsRemove(bpy.types.Operator):
+    bl_idname = "ai_render.control_nets_remove"
+    bl_label = "Add ControlNet"
+
+    def execute(self, context):
+        context.scene.air_props.control_nets.remove(context.scene.air_props.active_control_net)
+        return {'FINISHED'}
+
+
 classes = [
     AIR_OT_enable,
     AIR_OT_disable,
@@ -1323,15 +1297,20 @@ classes = [
     AIR_OT_generate_new_image_from_render,
     AIR_OT_generate_new_image_from_last_sd_image,
     AIR_OT_upscale_last_sd_image,
+    AIR_OT_upscale_sd_image,
     AIR_OT_render_animation,
     AIR_OT_setup_instructions_popup,
     AIR_OT_show_error_popup,
     AIR_OT_automatic1111_load_upscaler_models,
+    AIR_OT_automatic1111_load_sd_models,
     AIR_OT_automatic1111_load_controlnet_models,
     AIR_OT_automatic1111_load_controlnet_modules,
     AIR_OT_automatic1111_load_controlnet_models_and_modules,
     AIR_OT_inpaint_from_last_sd_image,
     AIR_OT_outpaint_from_last_sd_image,
+    AIR_OT_generate_new_image_from_text,
+    AIR_OT_ControlNetsAdd,
+    AIR_OT_ControlNetsRemove
 ]
 
 

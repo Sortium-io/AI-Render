@@ -18,6 +18,7 @@ def generate(params, img_file, filename_prefix, props):
 
     # map the generic params to the specific ones for the Stability API
     mapped_params = map_params(params)
+    del mapped_params["tiling"]
 
     # create the headers
     headers = create_headers()
@@ -48,7 +49,7 @@ def generate(params, img_file, filename_prefix, props):
         img_file.close()
     except requests.exceptions.ReadTimeout:
         img_file.close()
-        return operators.handle_error(f"The server timed out. Try again in a moment, or get help. [Get help with timeouts]({config.HELP_WITH_TIMEOUTS_URL})", "timeout")
+        return operators.handle_error(None, f"The server timed out. Try again in a moment, or get help. [Get help with timeouts]({config.HELP_WITH_TIMEOUTS_URL})", "timeout")
 
     # print log info for debugging
     # debug_log(response)
@@ -84,7 +85,7 @@ def upscale(img_file, filename_prefix, props):
         img_file.close()
     except requests.exceptions.ReadTimeout:
         img_file.close()
-        return operators.handle_error(f"The server timed out during upscaling. Try again in a moment, or turn off upscaling.", "timeout")
+        return operators.handle_error(None, f"The server timed out during upscaling. Try again in a moment, or turn off upscaling.", "timeout")
 
     # print log info for debugging
     # debug_log(response)
@@ -107,7 +108,7 @@ def handle_success(response, filename_prefix):
 
         return output_file
     except:
-        return operators.handle_error(f"Couldn't create a temp file to save image", "temp_file")
+        return operators.handle_error(None, f"Couldn't create a temp file to save image", "temp_file")
 
 
 def handle_error(response):
@@ -131,7 +132,7 @@ def handle_error(response):
         error_message = f"(Server Error) An unknown error occurred in the Stability API. Full server response: {str(response.content)}"
         error_key = "unknown_error_response"
 
-    return operators.handle_error(error_message, error_key)
+    return operators.handle_error(None, error_message, error_key)
 
 
 # PRIVATE SUPPORT FUNCTIONS:
@@ -175,7 +176,7 @@ def validate_params(params, props):
             params["width"] == 768 and params["height"] == 512:
                 return True
         else:
-            return operators.handle_error(f"The SDXL model only supports 512x512, 512x768 and 768x512 images. Please change your image size and try again.", "invalid_dimensions")
+            return operators.handle_error(None, f"The SDXL model only supports 512x512, 512x768 and 768x512 images. Please change your image size and try again.", "invalid_dimensions")
     else:
         return True
 
@@ -275,6 +276,8 @@ def supports_choosing_model():
 def supports_upscaling():
     return True
 
+def supports_tiling():
+    return False
 
 def supports_reloading_upscaler_models():
     return False

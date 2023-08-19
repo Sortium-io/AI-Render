@@ -10,41 +10,28 @@ from .. import (
 
 # CORE FUNCTIONS:
 
-def generate(params, img_file, filename_prefix, props):
+def generate(params, img_file, filename_prefix, props, is_text2image=False):
 
     # map the generic params to the specific ones for the Automatic1111 API
     map_params(params)
 
     # add a base 64 encoded image to the params
-    params["init_images"] = ["data:image/png;base64," + base64.b64encode(img_file.read()).decode()]
-    img_file.close()
+    if not is_text2image:
+        params["init_images"] = ["data:image/png;base64," + base64.b64encode(img_file.read()).decode()]
+        img_file.close()
 
     # add args for ControlNet if it's enabled
-    if props.controlnet_is_enabled:
-        controlnet_model = props.controlnet_model
-        controlnet_module = props.controlnet_module
-        controlnet_weight = props.controlnet_weight
-
-        if not controlnet_model:
-            return operators.handle_error(f"No ContolNet model selected. Either choose a new model or disable ControlNet. [Get help]({config.HELP_WITH_CONTROLNET_URL})", "controlnet_model_missing")
-
-        params["alwayson_scripts"] = {
-            "controlnet": {
-                "args": [
-                    {
-                    "weight": controlnet_weight,
-                    "module": controlnet_module,
-                    "model": controlnet_model
-                    }
-                ]
-            }
-        }
+    if props.control_nets:
+        map_controlnet_params(params, props)
 
     # prepare the server url
     try:
-        server_url = get_server_url("/sdapi/v1/img2img")
+        if is_text2image:
+            server_url = get_server_url("/sdapi/v1/txt2img")
+        else:
+            server_url = get_server_url("/sdapi/v1/img2img")
     except:
-        return operators.handle_error(f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_LOCAL_INSTALLATION_URL})", "local_server_url_missing")
+        return operators.handle_error(None, f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_LOCAL_INSTALLATION_URL})", "local_server_url_missing")
 
     # send the API request
     response = do_post(server_url, params)
@@ -86,7 +73,7 @@ def upscale(img_file, filename_prefix, props):
     try:
         server_url = get_server_url("/sdapi/v1/extra-single-image")
     except:
-        return operators.handle_error(f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_LOCAL_INSTALLATION_URL})", "local_server_url_missing")
+        return operators.handle_error(None, f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_LOCAL_INSTALLATION_URL})", "local_server_url_missing")
 
     # send the API request
     response = do_post(server_url, data)
@@ -113,26 +100,26 @@ def handle_success(response, filename_prefix):
     except:
         print("Automatic1111 response content: ")
         print(response.content)
-        return operators.handle_error("Received an unexpected response from the Automatic1111 Stable Diffusion server.", "unexpected_response")
+        return operators.handle_error(None, "Received an unexpected response from the Automatic1111 Stable Diffusion server.", "unexpected_response")
 
     # create a temp file
     try:
         output_file = utils.create_temp_file(filename_prefix + "-")
     except:
-        return operators.handle_error("Couldn't create a temp file to save image.", "temp_file")
+        return operators.handle_error(None, "Couldn't create a temp file to save image.", "temp_file")
 
     # decode base64 image
     try:
         img_binary = base64.b64decode(base64_img.replace("data:image/png;base64,", ""))
     except:
-        return operators.handle_error("Couldn't decode base64 image from the Automatic1111 Stable Diffusion server.", "base64_decode")
+        return operators.handle_error(None, "Couldn't decode base64 image from the Automatic1111 Stable Diffusion server.", "base64_decode")
 
     # save the image to the temp file
     try:
         with open(output_file, 'wb') as file:
             file.write(img_binary)
     except:
-        return operators.handle_error("Couldn't write to temp file.", "temp_file_write")
+        return operators.handle_error(None, "Couldn't write to temp file.", "temp_file_write")
 
 
     # return the temp file
@@ -146,16 +133,16 @@ def handle_error(response):
         try:
             response_obj = response.json()
             if response_obj.get('detail') and response_obj['detail'] == "Not Found":
-                return operators.handle_error(f"It looks like the Automatic1111 server is running, but it's not in API mode. [Get help]({config.HELP_WITH_AUTOMATIC1111_NOT_IN_API_MODE_URL})", "automatic1111_not_in_api_mode")
+                return operators.handle_error(None, f"It looks like the Automatic1111 server is running, but it's not in API mode. [Get help]({config.HELP_WITH_AUTOMATIC1111_NOT_IN_API_MODE_URL})", "automatic1111_not_in_api_mode")
             elif response_obj.get('detail') and response_obj['detail'] == "Sampler not found":
-                return operators.handle_error("The sampler you selected is not available on the Automatic1111 Stable Diffusion server. Please select a different sampler.", "invalid_sampler")
+                return operators.handle_error(None, "The sampler you selected is not available on the Automatic1111 Stable Diffusion server. Please select a different sampler.", "invalid_sampler")
             else:
-                return operators.handle_error(f"An error occurred in the Automatic1111 Stable Diffusion server. Full server response: {json.dumps(response_obj)}", "unknown_error")
+                return operators.handle_error(None, f"An error occurred in the Automatic1111 Stable Diffusion server. Full server response: {json.dumps(response_obj)}", "unknown_error")
         except:
-            return operators.handle_error(f"It looks like the Automatic1111 server is running, but it's not in API mode. [Get help]({config.HELP_WITH_AUTOMATIC1111_NOT_IN_API_MODE_URL})", "automatic1111_not_in_api_mode")
+            return operators.handle_error(None, f"It looks like the Automatic1111 server is running, but it's not in API mode. [Get help]({config.HELP_WITH_AUTOMATIC1111_NOT_IN_API_MODE_URL})", "automatic1111_not_in_api_mode")
 
     else:
-        return operators.handle_error("An error occurred in the Automatic1111 Stable Diffusion server. Check the server logs for more info.", "unknown_error_response")
+        return operators.handle_error(None, "An error occurred in the Automatic1111 Stable Diffusion server. Check the server logs for more info.", "unknown_error_response")
 
 
 # PRIVATE SUPPORT FUNCTIONS:
@@ -180,17 +167,56 @@ def map_params(params):
     params["denoising_strength"] = round(1 - params["image_similarity"], 2)
     params["sampler_index"] = params["sampler"]
 
+def map_controlnet_params(params, props):
+    controlnet_args = []
+    for controlnet_unit in props.control_nets:
+        try:
+            temp_file = utils.create_temp_file(controlnet_unit.image.name + "-")
+        except:
+            return handle_error("Couldn't create temp file for segmentation image", "temp_file")
+        
+        try:
+            controlnet_unit.image.save_render(temp_file)
+            img_file = open(temp_file, 'rb')
+        except Exception as e:
+            print(e)
+            return operators.handle_error(None, "Couldn't save segmentation image", "save_segmentation_image")
+
+
+        controlnet_args.append({
+            "input_image": base64.b64encode(img_file.read()).decode(),
+            "weight": controlnet_unit.conditioning,
+            "module": controlnet_unit.preprocessor,
+            "model": controlnet_unit.model,
+            "lowvram": controlnet_unit.lowvram,
+            "processor_res": controlnet_unit.preprocessor_res,
+            "threshold_a": controlnet_unit.preprocessor_threshold_a,
+            "threshold_b": controlnet_unit.preprocessor_threshold_b,
+            "guidance_start": controlnet_unit.model_guidance_start,
+            "guidance_end": controlnet_unit.model_guidance_end,
+            "control_mode": controlnet_unit.control_mode,
+            "pixel_perfect": controlnet_unit.pixel_perfect,
+        })
+
+        img_file.close()
+
+    params["alwayson_scripts"] = {
+        "controlnet": {
+            "args": controlnet_args
+        }
+    }
+
 
 def do_post(url, data):
     # send the API request
     try:
         return requests.post(url, json=data, headers=create_headers(), timeout=utils.local_sd_timeout())
     except requests.exceptions.ConnectionError:
-        return operators.handle_error(f"The local Stable Diffusion server couldn't be found. It's either not running, or it's running at a different location than what you specified in the add-on preferences. [Get help]({config.HELP_WITH_LOCAL_INSTALLATION_URL})", "local_server_not_found")
+        return operators.handle_error(None, f"The local Stable Diffusion server couldn't be found. It's either not running, or it's running at a different location than what you specified in the add-on preferences. [Get help]({config.HELP_WITH_LOCAL_INSTALLATION_URL})", "local_server_not_found")
     except requests.exceptions.MissingSchema:
-        return operators.handle_error(f"The url for your local Stable Diffusion server is invalid. Please set it correctly in the add-on preferences. [Get help]({config.HELP_WITH_LOCAL_INSTALLATION_URL})", "local_server_url_invalid")
+        return operators.handle_error(None, f"The url for your local Stable Diffusion server is invalid. Please set it correctly in the add-on preferences. [Get help]({config.HELP_WITH_LOCAL_INSTALLATION_URL})", "local_server_url_invalid")
     except requests.exceptions.ReadTimeout:
-        return operators.handle_error("The local Stable Diffusion server timed out. Set a longer timeout in AI Render preferences, or use a smaller image size.", "timeout")
+        return operators.handle_error(None, "The local Stable Diffusion server timed out. Set a longer timeout in AI Render preferences, or use a smaller image size.", "timeout")
 
 
 def debug_log(response):
@@ -268,12 +294,14 @@ def supports_negative_prompts():
 
 
 def supports_choosing_model():
-    return False
+    return True
 
 
 def supports_upscaling():
     return True
 
+def supports_tiling():
+    return True
 
 def supports_reloading_upscaler_models():
     return True
@@ -322,6 +350,16 @@ def get_available_controlnet_modules(context):
             enum_list.append((item, item, ""))
         return enum_list
 
+def get_available_sd_models(context):
+    models = context.scene.air_props.sd_available_models
+
+    if (not models):
+        return []
+    else:
+        enum_list = []
+        for item in models.split("||||"):
+            enum_list.append((item, item, ""))
+        return enum_list
 
 def choose_controlnet_defaults(context):
     models = get_available_controlnet_models(context)
@@ -353,6 +391,25 @@ def choose_controlnet_defaults(context):
             context.scene.air_props.controlnet_module = module_selection
             return
 
+def load_sd_models(context):
+    try:
+        # get the list of available controlnet models from the Automatic1111 api
+        server_url = get_server_url("/sdapi/v1/sd-models")
+        headers = { "Accept": "application/json" }
+        response = requests.get(server_url, headers=headers, timeout=5)
+        response_obj = response.json()
+        print("Stable Diffusion models returned from Automatic1111 API:")
+        print(response_obj)
+
+        # store the list of models in the scene properties
+        models = [model["title"] for model in response_obj]
+        if not models:
+            return operators.handle_error(context.scene, f"You don't have any Stable Diffusion models installed. You will need to download them from Hugging Face")
+        else:
+            context.scene.air_props.sd_available_models = "||||".join(models)
+            return True
+    except:
+        return operators.handle_error(context.scene, f"Couldn't get the list of available Stable Diffusion models from the Automatic1111 server")
 
 def load_upscaler_models(context):
     try:
@@ -369,7 +426,7 @@ def load_upscaler_models(context):
 
         # store the list of models in the scene properties
         if not response_obj:
-            return operators.handle_error(f"No upscaler models are installed in Automatic1111. [Get help]({config.HELP_WITH_AUTOMATIC1111_UPSCALING_URL})")
+            return operators.handle_error(context.scene, f"No upscaler models are installed in Automatic1111. [Get help]({config.HELP_WITH_AUTOMATIC1111_UPSCALING_URL})")
         else:
             # map the response object to a list of model names
             upscaler_models = []
@@ -385,7 +442,7 @@ def load_upscaler_models(context):
             # return success
             return True
     except:
-        return operators.handle_error(f"Couldn't get the list of available upscaler models from the Automatic1111 server. [Get help]({config.HELP_WITH_AUTOMATIC1111_UPSCALING_URL})")
+        return operators.handle_error(context.scene, f"Couldn't get the list of available upscaler models from the Automatic1111 server. [Get help]({config.HELP_WITH_AUTOMATIC1111_UPSCALING_URL})")
 
 
 def load_controlnet_models(context):
@@ -401,12 +458,12 @@ def load_controlnet_models(context):
         # store the list of models in the scene properties
         models = response_obj["model_list"]
         if not models:
-            return operators.handle_error(f"You don't have any ControlNet models installed. You will need to download them from Hugging Face. [Get help]({config.HELP_WITH_CONTROLNET_URL})")
+            return operators.handle_error(context.scene, f"You don't have any ControlNet models installed. You will need to download them from Hugging Face. [Get help]({config.HELP_WITH_CONTROLNET_URL})")
         else:
             context.scene.air_props.controlnet_available_models = "||||".join(models)
             return True
     except:
-        return operators.handle_error(f"Couldn't get the list of available ControlNet models from the Automatic1111 server. Make sure ControlNet is installed and activated. [Get help]({config.HELP_WITH_CONTROLNET_URL})")
+        return operators.handle_error(context.scene, f"Couldn't get the list of available ControlNet models from the Automatic1111 server. Make sure ControlNet is installed and activated. [Get help]({config.HELP_WITH_CONTROLNET_URL})")
 
 
 def load_controlnet_modules(context):
@@ -424,4 +481,4 @@ def load_controlnet_modules(context):
         context.scene.air_props.controlnet_available_modules = "||||".join(modules)
         return True
     except:
-        return operators.handle_error(f"Couldn't get the list of available ControlNet modules from the Automatic1111 server. Make sure ControlNet is installed and activated. [Get help]({config.HELP_WITH_CONTROLNET_URL})")
+        return operators.handle_error(context.scene, f"Couldn't get the list of available ControlNet modules from the Automatic1111 server. Make sure ControlNet is installed and activated. [Get help]({config.HELP_WITH_CONTROLNET_URL})")

@@ -24,6 +24,12 @@ def get_available_upscaler_models(self, context):
 def get_default_upscaler_model():
     return utils.get_active_backend().default_upscaler_model()
 
+def get_available_sd_models(self, context):
+    if utils.sd_backend() == "automatic1111":
+        return automatic1111_api.get_available_sd_models(context)
+    else:
+        return []
+
 
 def get_available_controlnet_models(self, context):
     if utils.sd_backend() == "automatic1111":
@@ -67,6 +73,19 @@ def ensure_properties(self, context):
     ensure_sampler(context)
     ensure_upscaler_model(context)
 
+class AIRControlnet(bpy.types.PropertyGroup):
+    image: bpy.props.PointerProperty(type=bpy.types.Image)
+    preprocessor: bpy.props.EnumProperty(name="Controlnet Preprocessor", items=get_available_controlnet_modules)
+    model: bpy.props.EnumProperty(name="Controlnet Model", items=get_available_controlnet_models)
+    conditioning: bpy.props.FloatProperty(name="Controlnet Conditioning", default=1.0)
+    lowvram: bpy.props.BoolProperty(name="Controlnet Low Ram", default=False)
+    preprocessor_res: bpy.props.IntProperty(name="Controlnet Preprocessor Resolution", default=64)
+    preprocessor_threshold_a: bpy.props.IntProperty(name="Controlnet Preprocessor Threshold A", default=64)
+    preprocessor_threshold_b: bpy.props.IntProperty(name="Controlnet Preprocessor Threshold B", default=64)
+    model_guidance_start: bpy.props.FloatProperty(name="Controlnet Model Guidance Start", default=0.0)
+    model_guidance_end: bpy.props.FloatProperty(name="Controlnet Model Guidance End", default=1.0)
+    control_mode: bpy.props.EnumProperty(name="Controlnet Mode", items=(("Balanced", "Balanced", "", 0), ("My prompt is more important", "My prompt is more important", "", 1), ("ControlNet is more important", "ControlNet is more important", "", 2)))
+    pixel_perfect: bpy.props.BoolProperty(name="Controlnet Pixel Perfect", default=False)
 
 class AIRProperties(bpy.types.PropertyGroup):
     is_enabled: bpy.props.BoolProperty(
@@ -78,7 +97,7 @@ class AIRProperties(bpy.types.PropertyGroup):
         name="Prompt",
         description="Describe anything for Stable Diffusion to create",
         default=config.default_prompt_text,
-        update=operators.clear_error_handler,
+        #update=operators.clear_error_handler,
     )
     negative_prompt_text: bpy.props.StringProperty(
         name="Negative Prompt",
@@ -123,16 +142,15 @@ class AIRProperties(bpy.types.PropertyGroup):
         max=150,
         description="How long to process the image. Values in the range of 25-50 generally work well. Higher values take longer (and use more credits) and may or may not improve results",
     )
+    sd_available_models: bpy.props.StringProperty(
+        name="Stable Diffusion Models",
+        default="",
+        description="A list of the available Stable Diffusion models (loaded from the Automatic1111 API)",
+    )
     sd_model: bpy.props.EnumProperty(
         name="Stable Diffusion Model",
-        default=40,
-        items=[
-            ('v1-5', 'SD 1.5', '', 20),
-            ('v2-0', 'SD 2.0', '', 30),
-            ('v2-1', 'SD 2.1', '', 40),
-            ('stable-diffusion-xl-beta-v2-2-2', 'SDXL Beta', '', 100),
-        ],
-        description="The Stable Diffusion model to use. SDXL is optimized for photorealism and detailed portraits (comparable to Midjourney). 2.x is more accurate than 1.5 with some types of images, and prompts differently from earlier versions. 1.5 is best for using artist names and art styles in prompts",
+        items=get_available_sd_models,
+        description="The Stable Diffusion model to use.",
     )
     sampler: bpy.props.EnumProperty(
         name="Sampler",
@@ -206,6 +224,11 @@ class AIRProperties(bpy.types.PropertyGroup):
         items=get_available_upscaler_models,
         description="Which upscaler model to use",
     )
+    automatic1111_tiling: bpy.props.BoolProperty(
+        name="Automatic1111 Tiling",
+        default=False,
+        description="When true, will check the tiling option in the Automatic1111",
+    )
     automatic1111_available_upscaler_models: bpy.props.StringProperty(
         name="Automatic1111 Upscaler Models",
         default="Lanczos||||Nearest||||ESRGAN_4x||||LDSR||||ScuNET GAN||||ScuNET PSNR||||SwinIR 4x",
@@ -246,20 +269,7 @@ class AIRProperties(bpy.types.PropertyGroup):
         name="Close Animation Tips",
         default=False,
     )
-    controlnet_is_enabled: bpy.props.BoolProperty(
-        name="Enable ControlNet",
-        default=False,
-        description="When true, will use ControlNet for each rendered image",
-    )
-    controlnet_weight: bpy.props.FloatProperty(
-        name="ControlNet Weight",
-        default=1.0,
-        soft_min=0.0,
-        soft_max=1.0,
-        min=0.0,
-        max=2.0,
-        description="How much influence ControlNet will have on guiding the rendered image output",
-    )
+    control_nets: bpy.props.CollectionProperty(type=AIRControlnet)
     controlnet_close_help: bpy.props.BoolProperty(
         name="Close ControlNet Help",
         default=False,
@@ -274,15 +284,11 @@ class AIRProperties(bpy.types.PropertyGroup):
         default="",
         description="A list of the available ControlNet modules (preprocessors) (loaded from the Automatic1111 API)",
     )
-    controlnet_model: bpy.props.EnumProperty(
-        name="ControlNet Model",
-        items=get_available_controlnet_models,
-        description="Which ControlNet model to use (these must be downloaded and installed locally)",
-    )
-    controlnet_module: bpy.props.EnumProperty(
-        name="ControlNet Module",
-        items=get_available_controlnet_modules,
-        description="Which ControlNet module (preprocessor) to use (these come with the ControlNet extension)",
+    active_control_net: bpy.props.IntProperty(name="Active ControlNet")
+    segmentation_image_name: bpy.props.StringProperty(
+        name="Object segmentation map image Name",
+        default="",
+        description="The name of the segmentation map image to use as input to ControlNet",
     )
     inpaint_mask_path: bpy.props.StringProperty(
         name="Inpaint Mask Path",
@@ -338,10 +344,15 @@ class AIRProperties(bpy.types.PropertyGroup):
         step=0.01,
         name="Outpaint Color Variation",
     )
-
+    upscale_image_name: bpy.props.StringProperty(
+        name="Upscale image Name",
+        default="",
+        description="The name of the image to use as input for upscaling",
+    )
 
 classes = [
-    AIRProperties
+    AIRControlnet,
+    AIRProperties,
 ]
 
 

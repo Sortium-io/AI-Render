@@ -38,10 +38,10 @@ def generate(params, img_file, filename_prefix, props):
         img_file.close()
     except requests.exceptions.ReadTimeout:
         img_file.close()
-        return operators.handle_error(f"There was an error sending this request to Stable Horde. Please try again in a moment.", "timeout")
+        return operators.handle_error(None, f"There was an error sending this request to Stable Horde. Please try again in a moment.", "timeout")
     except Exception as e:
         img_file.close()
-        return operators.handle_error(f"Error with Stable Horde. Full error message: {e}", "unknown_error")
+        return operators.handle_error(None, f"Error with Stable Horde. Full error message: {e}", "unknown_error")
 
     # Check the status of the request (For at most request_timeout seconds)
     for i in range(request_timeout()):
@@ -58,9 +58,9 @@ def generate(params, img_file, filename_prefix, props):
             # Ignore timeouts
             print("WARN: Timeout while checking status")
         except Exception as e: # Catch all other errors
-            return operators.handle_error(f"Error while checking status: {e}", "unknown_error")
+            return operators.handle_error(None, f"Error while checking status: {e}", "unknown_error")
     if (i == request_timeout() - 1):
-        return operators.handle_error(f"Timeout generating image. Try again in a moment, or get help. [Get help with timeouts]({config.HELP_WITH_TIMEOUTS_URL})", "timeout")
+        return operators.handle_error(None, f"Timeout generating image. Try again in a moment, or get help. [Get help with timeouts]({config.HELP_WITH_TIMEOUTS_URL})", "timeout")
 
     # Get the image
     try:
@@ -74,9 +74,9 @@ def generate(params, img_file, filename_prefix, props):
             return handle_error(response)
 
     except requests.exceptions.ReadTimeout:
-        return operators.handle_error(f"Timeout getting image from Stable Horde. Try again in a moment, or get help. [Get help with timeouts]({config.HELP_WITH_TIMEOUTS_URL})", "timeout")
+        return operators.handle_error(None, f"Timeout getting image from Stable Horde. Try again in a moment, or get help. [Get help with timeouts]({config.HELP_WITH_TIMEOUTS_URL})", "timeout")
     except Exception as e:
-        return operators.handle_error(f"Error with Stable Horde. Full error message: {e}", "unknown_error")
+        return operators.handle_error(None, f"Error with Stable Horde. Full error message: {e}", "unknown_error")
 
 
 def handle_success(response, filename_prefix):
@@ -90,13 +90,13 @@ def handle_success(response, filename_prefix):
     except:
         print("Stable Horde response content: ")
         print(response.content)
-        return operators.handle_error("Received an unexpected response from the Stable Horde server.", "unexpected_response")
+        return operators.handle_error(None, "Received an unexpected response from the Stable Horde server.", "unexpected_response")
 
     # create a temp file
     try:
         output_file = utils.create_temp_file(filename_prefix + "-", suffix=f".{get_image_format().lower()}")
     except:
-        return operators.handle_error("Couldn't create a temp file to save image.", "temp_file")
+        return operators.handle_error(None, "Couldn't create a temp file to save image.", "temp_file")
 
     # Retrieve img from img_url and write it to the temp file
     img_binary = None
@@ -105,21 +105,21 @@ def handle_success(response, filename_prefix):
         response = requests.get(img_url, timeout=20)
         img_binary = response.content
     except requests.exceptions.ReadTimeout:
-        return operators.handle_error(f"Timeout retrieving file. Try again in a moment, or get help. [Get help with timeouts]({config.HELP_WITH_TIMEOUTS_URL})", "timeout")
+        return operators.handle_error(None, f"Timeout retrieving file. Try again in a moment, or get help. [Get help with timeouts]({config.HELP_WITH_TIMEOUTS_URL})", "timeout")
 
     # save the image to the temp file
     try:
         with open(output_file, 'wb') as file:
             file.write(img_binary)
     except:
-        return operators.handle_error("Couldn't write to temp file.", "temp_file_write")
+        return operators.handle_error(None, "Couldn't write to temp file.", "temp_file_write")
 
     # return the temp file
     return output_file
 
 
 def handle_error(response):
-    return operators.handle_error("The Stable Horde server returned an error: " + str(response.content), "unknown_error")
+    return operators.handle_error(None, "The Stable Horde server returned an error: " + str(response.content), "unknown_error")
 
 
 # PRIVATE SUPPORT FUNCTIONS:
@@ -209,6 +209,9 @@ def supports_choosing_model():
 
 
 def supports_upscaling():
+    return False
+
+def supports_tiling():
     return False
 
 
