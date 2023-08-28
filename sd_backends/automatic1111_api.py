@@ -90,6 +90,37 @@ def upscale(img_file, filename_prefix, props):
     else:
         return handle_error(response)
 
+def map_inpaint_params(params):
+    params["denoising_strength"] = round(1 - params["image_similarity"], 2)
+    params["sampler_index"] = params["sampler"]
+    params["inpaint_full_res"] = params["is_full_res"]
+    params["inpaint_full_res_padding"] = params["full_res_padding"]
+    params["inpainting_mask_invert"] = 1 if params["mask_invert"] else 0
+
+def inpaint(params, img_file, mask_file, filename_prefix, props):
+
+    map_inpaint_params(params)
+
+    params["init_images"] = ["data:image/png;base64," + base64.b64encode(img_file.read()).decode()]
+    img_file.close()
+
+    params["mask"] = "data:image/png;base64," + base64.b64encode(mask_file.read()).decode()
+    mask_file.close()
+
+    try:
+        server_url = get_server_url("/sdapi/v1/img2img")
+    except:
+        return operators.handle_error(None, f"You need to specify a location for the local Stable Diffusion server in the add-on preferences. [Get help]({config.HELP_WITH_LOCAL_INSTALLATION_URL})", "local_server_url_missing")
+
+    response = do_post(server_url, params)
+
+    if response is False:
+        return False
+
+    if response.status_code == 200:
+        return handle_success(response, filename_prefix)
+    else:
+        return handle_error(response)
 
 def handle_success(response, filename_prefix):
 
@@ -308,7 +339,7 @@ def supports_reloading_upscaler_models():
 
 
 def supports_inpainting():
-    return False
+    return True
 
 
 def supports_outpainting():

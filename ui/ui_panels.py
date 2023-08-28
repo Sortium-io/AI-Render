@@ -515,10 +515,10 @@ class AIR_PT_inpaint(bpy.types.Panel):
         sub.prop(props, 'inpaint_padding', text="", slider=False)
 
         row = layout.row()
-        row.prop(props, "inpaint_mask_path", text="Mask")
+        row.prop(props, "inpaint_mask_image_name", text="Mask")
 
         row = layout.row()
-        row.enabled = props.last_generated_image_filename != "" and props.inpaint_mask_path != ""
+        row.enabled = props.last_generated_image_filename != "" and props.inpaint_mask_image_name != ""
         row.operator(operators.AIR_OT_inpaint_from_last_sd_image.bl_idname)
 
 

@@ -564,7 +564,7 @@ def sd_upscale(scene, apply_to_last_image=True):
         print("Looking for AI Render UPSCALE output_file", generated_image_file)
         upscaled_image = bpy.data.images.load(generated_image_file, check_existing=False)
         upscaled_image.name = "AI Render Upscale Output"
-        print("AI Render output_file", upscaled_image)
+        print("AI Render UPSCALE output_file", upscaled_image)
     except:
         return handle_error(scene, "Couldn't load the image from Stable Diffusion", "load_sd_image")
 
@@ -589,7 +589,7 @@ def sd_upscale(scene, apply_to_last_image=True):
 
 
 # Inpainting
-def sd_inpaint(scene):
+def sd_inpaint(scene, apply_to_last_image=True):
     """Post to the API to generate a Stable Diffusion image with inpainting, and then process it"""
     props = scene.air_props
 
@@ -616,21 +616,36 @@ def sd_inpaint(scene):
     after_output_filename_prefix = f"ai-render-{timestamp}-2-inpainted"
     animation_output_filename_prefix = "ai-render-"
 
-    # if we want to use the last SD image, try loading it now
-    if not props.last_generated_image_filename:
-        return handle_error(scene, "Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
-    try:
-        img_file = open(props.last_generated_image_filename, 'rb')
-    except:
-        return handle_error(scene, "Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
+    if apply_to_last_image:
+        # try loading the last SD image
+        if not props.last_generated_image_filename:
+            return handle_error(scene, "Couldn't find the last Stable Diffusion image", "last_generated_image_filename")
+        try:
+            img_file = open(props.last_generated_image_filename, 'rb')
+        except:
+            return handle_error(scene, "Couldn't load the last Stable Diffusion image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_last_generated_image")
+    else:
+        try:
+            temp_input_file = save_image_to_temp_file(scene, props.upscale_image_name)
+            if not temp_input_file:
+                return False
+            img_file = open(temp_input_file, 'rb')
+        except:
+            return handle_error(scene, "Couldn't load the upscale image. It's probably been deleted or moved. You'll need to restore it or render a new image.", "load_upscale_image")
 
     # load mask here
-    if props.inpaint_mask_path == "":
-        return handle_error(scene, "Couldn't find the Inpaint Mask File", "inpaint_mask_path")
+    if props.inpaint_mask_image_name == "":
+        return handle_error(scene, "Couldn't find the Inpaint Mask File", "inpaint_mask_image_name")
     try:
-        mask_file = open(props.inpaint_mask_path, 'rb')
+        temp_input_file = save_image_to_temp_file(scene, props.inpaint_mask_image_name)
+        if not temp_input_file:
+            return False
+        mask_file = open(temp_input_file, 'rb')
     except:
-        return handle_error(scene, "Couldn't load the uploaded inpaint mask file", "inpaint_mask_path")
+        return handle_error(scene, "Couldn't load the uploaded inpaint mask file", "inpaint_mask_image_name")
+
+    # get the backend we're using
+    sd_backend = utils.get_active_backend()
 
     # prepare data for the API request
     params = {
@@ -638,15 +653,17 @@ def sd_inpaint(scene):
         "negative_prompt": negative_prompt,
         "width": utils.get_output_width(scene),
         "height": utils.get_output_height(scene),
+        "tiling": props.automatic1111_tiling if sd_backend.supports_tiling() else False,
+        "image_similarity": props.image_similarity,
         "seed": props.seed,
         "cfg_scale": props.cfg_scale,
         "steps": props.steps,
         "is_full_res" : props.inpaint_full_res,
         "full_res_padding" : props.inpaint_padding,
+        "sampler": props.sampler,
+        "mask_blur": props.inpaint_mask_blur,
+        "mask_invert": props.inpaint_mask_invert,
     }
-
-    # get the backend we're using
-    sd_backend = utils.get_active_backend()
 
     # send to whichever API we're using
     start_time = time.time()
@@ -669,13 +686,16 @@ def sd_inpaint(scene):
 
     # load the image into our scene
     try:
-        img = bpy.data.images.load(generated_image_file, check_existing=False)
+        print("Looking for AI Render INPAINT output_file", generated_image_file)
+        inpainted_image = bpy.data.images.load(generated_image_file, check_existing=False)
+        inpainted_image.name = "AI Render Inpaint Output"
+        print("AI Render INPAINT output_file", inpainted_image)
     except:
         return handle_error(scene, "Couldn't load the image from Stable Diffusion", "load_sd_image")
 
     # view the image in the AIR workspace
     try:
-        utils.view_sd_result_in_air_image_editor(img)
+        utils.view_sd_result_in_air_image_editor(inpainted_image)
     except:
         return handle_error(scene, "Couldn't switch the view to the image from Stable Diffusion", "view_sd_image")
 
@@ -1237,6 +1257,19 @@ class AIR_OT_automatic1111_load_controlnet_models_and_modules(bpy.types.Operator
         # set the default values for the ControlNet model and module
         return {'FINISHED'}
 
+class AIR_OT_inpaint_sd_image(bpy.types.Operator):
+    "Inpaint a Stable Diffusion image"
+    bl_idname = "ai_render.inpaint_sd_image"
+    bl_label = "Inpaint Image"
+
+    def execute(self, context):
+        do_pre_render_setup(context.scene)
+        do_pre_api_setup(context.scene)
+
+        # post to the api (on a different thread, outside the operator)
+        task_queue.add(functools.partial(sd_inpaint, context.scene, False))
+
+        return {'FINISHED'}
 
 class AIR_OT_inpaint_from_last_sd_image(bpy.types.Operator):
     "Inpaint a new Stable Diffusion image - without re-rendering - using the most recent Stable Diffusion image as the starting point"
@@ -1306,6 +1339,7 @@ classes = [
     AIR_OT_automatic1111_load_controlnet_models,
     AIR_OT_automatic1111_load_controlnet_modules,
     AIR_OT_automatic1111_load_controlnet_models_and_modules,
+    AIR_OT_inpaint_sd_image,
     AIR_OT_inpaint_from_last_sd_image,
     AIR_OT_outpaint_from_last_sd_image,
     AIR_OT_generate_new_image_from_text,

@@ -290,11 +290,10 @@ class AIRProperties(bpy.types.PropertyGroup):
         default="",
         description="The name of the segmentation map image to use as input to ControlNet",
     )
-    inpaint_mask_path: bpy.props.StringProperty(
-        name="Inpaint Mask Path",
+    inpaint_mask_image_name: bpy.props.StringProperty(
+        name="Inpaint mask image Name",
         default="",
-        description="Upload Inpaint Mask",
-        subtype="FILE_PATH",
+        description="The name of the mask image to use as input to Inpainting",
     )
     inpaint_full_res: bpy.props.BoolProperty(
         name="Inpaint at Full Resolution",
@@ -308,6 +307,19 @@ class AIRProperties(bpy.types.PropertyGroup):
         default=32,
         step=4,
         description="",
+    )
+    inpaint_mask_blur: bpy.props.IntProperty(
+        name="Outpaint Mask Blur",
+        description="How much the inpainting mask is blurred",
+        min=0,
+        max=64,
+        step=1,
+        default=4,
+    )
+    inpaint_mask_invert: bpy.props.BoolProperty(
+        name="Inpaint Mask Invert",
+        default=True,
+        description="Invert the inpainting mask",
     )
     outpaint_direction: bpy.props.EnumProperty(
         name="Outpaint Direction",
