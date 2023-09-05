@@ -44,6 +44,7 @@ preset_styles = [
     ("Noir Line Art", "portrait, noir line art, trending on Artstation", "noir-line-art.jpg"),
     ("Bauhaus", "bauhaus art, bauhaus style painting", "bauhaus.jpg"),
     ("Bone Carving", "bone carving", "bone-carving.jpg"),
+    ("Textures", "diffuse texture", "diffusetexture.jpg"),
     ("Stipple", "stipple", "stipple.jpg"),
     ("Wild Rainbow", "intricate, yellow green red, Scenic, Hyperdetailed, rainbow splash, symbolic, Bagshaw, Chevrier, Ferri, Kaluta, spinning, Pixiv, Mucha, Cina, Cinematic, WLOP, 8K, smooth sharp focus, rutkowski, detailed eyes, Artgerm, Giger, glowing fractal edges, cel-shaded", "wild-rainbow.jpg"),
 ]
